@@ -15,11 +15,6 @@
 #include "Components/SkillsComponent.h"
 #include "Components/NeedsComponent.h"
 
-/* Will implement with the AI module suite  */
-//#include "Components/BrainComponent.h"
-//#include "Components/PerceptionComponent.h"
-//#include "Components/MemoryComponent.h"
-
 ABaseCharacter::ABaseCharacter()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -71,11 +66,6 @@ ABaseCharacter::ABaseCharacter()
         StaminaComponent = nullptr;
         SkillsComponent = nullptr;
     }
-
-    BrainComponent = nullptr;
-    // pending AI implementation.
-    //PerceptionComponent = nullptr;
-    //MemoryComponent = nullptr;
 
     // Enable replication
     bReplicates = true;

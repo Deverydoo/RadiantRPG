@@ -1,5 +1,5 @@
 // Public/Characters/PlayerCharacter.h
-// Updated player character header with proper collision setup
+// Updated player character header with improved camera positioning and interaction tracing
 
 #pragma once
 
@@ -32,14 +32,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCameraModeChanged, ECameraMode, N
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInteractableDetected, AActor*, InteractableActor, bool, bIsInRange);
 
 /**
- * PlayerCharacter - Player-specific character class
+ * PlayerCharacter - Player-specific character class with improved camera and interaction systems
  * 
  * Responsibilities:
- * - Camera management (first/third person switching, zoom)
+ * - Camera management (first/third person switching, zoom) with over-the-shoulder positioning
  * - Movement execution (receives processed input from controller)
- * - Interaction detection and tracing with proper collision channels
+ * - Interaction detection and tracing with camera distance compensation
  * - Player-specific UI integration
- * - Camera-based world interaction
+ * - Camera-based world interaction with proper third-person support
  * 
  * Note: This class handles movement/action EXECUTION only.
  * Input processing is handled by RadiantPlayerController.
@@ -60,7 +60,7 @@ protected:
 
     // === CAMERA COMPONENTS ===
     
-    /** Third person camera boom */
+    /** Third person camera boom (positioned to the right for over-the-shoulder view) */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
     class USpringArmComponent* ThirdPersonCameraBoom;
 
@@ -126,7 +126,7 @@ protected:
 
     // === INTERACTION SETTINGS ===
     
-    /** Base interaction distance */
+    /** Base interaction distance (compensated for camera distance in third person) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction", meta = (ClampMin = "50.0", ClampMax = "500.0"))
     float BaseInteractionDistance;
 
@@ -136,116 +136,112 @@ protected:
 
     /** Collision channel for interaction traces - using custom Interaction channel */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
-    TEnumAsByte<ECollisionChannel> InteractionTraceChannel;
+    TEnumAsByte<ECollisionChannel> InteractionChannel;
 
-    /** Whether to show debug traces for interaction */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
-    bool bShowInteractionDebug;
-
-    // === CURRENT STATE ===
-    
-    /** Currently detected interactable */
+    /** Currently focused interactable */
     UPROPERTY(BlueprintReadOnly, Category = "Interaction")
     AActor* CurrentInteractable;
 
-    /** Last interaction point */
+    /** Current interaction point in world space */
     UPROPERTY(BlueprintReadOnly, Category = "Interaction")
     FVector CurrentInteractionPoint;
 
-    /** Last interaction normal */
+    /** Current interaction surface normal */
     UPROPERTY(BlueprintReadOnly, Category = "Interaction")
     FVector CurrentInteractionNormal;
 
-    /** Whether player is currently sprinting */
+    // === DEBUG SETTINGS ===
+    
+    /** Show interaction debug visualization */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+    bool bShowInteractionDebug;
+
+    // === MOVEMENT STATE ===
+    
+    /** Whether player is currently trying to sprint */
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
     bool bIsSprinting;
 
 public:
-    bool IsSprinting() const { return bIsSprinting; }
-
-protected:
-    /** Current movement input */
-    UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    FVector2D MovementInput;
-
-    /** Current look input */
-    UPROPERTY(BlueprintReadOnly, Category = "Movement")
-    FVector2D LookInput;
-
-public:
     // === EVENTS ===
     
-    UPROPERTY(BlueprintAssignable, Category = "Player Events")
+    /** Broadcast when camera mode changes */
+    UPROPERTY(BlueprintAssignable, Category = "Camera")
     FOnCameraModeChanged OnCameraModeChanged;
 
-    UPROPERTY(BlueprintAssignable, Category = "Player Events")
+    /** Broadcast when interactable detection state changes */
+    UPROPERTY(BlueprintAssignable, Category = "Interaction")
     FOnInteractableDetected OnInteractableDetected;
-
-    // === INPUT PROCESSING FUNCTIONS (Called by PlayerController) ===
-    
-    /** Process movement input from controller */
-    UFUNCTION(BlueprintCallable, Category = "Input Processing")
-    void HandleMoveInput(const FInputActionValue& Value);
-
-    /** Process look input from controller (pre-processed with sensitivity) */
-    UFUNCTION(BlueprintCallable, Category = "Input Processing")
-    void HandleLookInput(const FVector2D& ProcessedLookInput);
-
-    /** Process zoom input from controller */
-    UFUNCTION(BlueprintCallable, Category = "Input Processing")
-    void HandleZoomInput(const FInputActionValue& Value);
 
     // === CAMERA INTERFACE ===
     
-    /** Toggle between first and third person */
-    UFUNCTION(BlueprintCallable, Category = "Camera")
-    void ToggleCameraMode();
-
-    /** Set specific camera mode */
-    UFUNCTION(BlueprintCallable, Category = "Camera")
-    void SetCameraMode(ECameraMode NewMode);
-
-    /** Cycle zoom level in third person */
-    UFUNCTION(BlueprintCallable, Category = "Camera")
-    void CycleZoomLevel();
-
-    /** Set specific zoom level */
-    UFUNCTION(BlueprintCallable, Category = "Camera")
-    void SetZoomLevel(EThirdPersonZoom NewZoom);
-
-    /** Get current camera mode */
-    UFUNCTION(BlueprintPure, Category = "Camera")
-    ECameraMode GetCurrentCameraMode() const { return CurrentCameraMode; }
-
-    /** Get currently active camera */
+    /** Get the currently active camera component */
     UFUNCTION(BlueprintPure, Category = "Camera")
     UCameraComponent* GetActiveCamera() const;
 
-    // === INTERACTION INTERFACE ===
-    
-    /** Try to interact with current interactable */
-    UFUNCTION(BlueprintCallable, Category = "Interaction")
-    void TryInteract();
+    UFUNCTION(BlueprintCallable, Category = "Camera")
+    void SetCameraMode(ECameraMode NewMode);
 
-    /** Get current interactable */
-    UFUNCTION(BlueprintPure, Category = "Interaction")
-    AActor* GetCurrentInteractable() const { return CurrentInteractable; }
+    UFUNCTION(BlueprintCallable, Category = "Camera")
+    void SetThirdPersonZoom(EThirdPersonZoom NewZoom);
+
+    UFUNCTION(BlueprintPure, Category = "Camera")
+    ECameraMode GetCurrentCameraMode() const { return CurrentCameraMode; }
+
+    UFUNCTION(BlueprintPure, Category = "Camera")
+    EThirdPersonZoom GetCurrentZoomLevel() const { return CurrentZoomLevel; }
 
     // === MOVEMENT INTERFACE ===
     
+    /** Move character based on input (called by PlayerController) */
+    UFUNCTION(BlueprintCallable, Category = "Movement")
+    void MoveCharacter(const FVector2D& MovementVector);
+
     /** Start sprinting */
     UFUNCTION(BlueprintCallable, Category = "Movement")
-    void StartSprinting();
+    void StartSprint();
 
     /** Stop sprinting */
     UFUNCTION(BlueprintCallable, Category = "Movement")
-    void StopSprinting();
+    void StopSprint();
 
-    /** Check if can sprint */
-    UFUNCTION(BlueprintPure, Category = "Movement")
-    bool CanSprint() const;
+    /** Start jumping */
+    UFUNCTION(BlueprintCallable, Category = "Movement")
+    void StartJump();
 
-    // === SETTINGS ===
+    /** Stop jumping */
+    UFUNCTION(BlueprintCallable, Category = "Movement")
+    void StopJump();
+
+    // === INPUT INTERFACE ===
+    
+    /** Toggle between first and third person camera */
+    UFUNCTION(BlueprintCallable, Category = "Camera")
+    void ToggleCameraMode();
+
+    /** Toggle third person zoom level */
+    UFUNCTION(BlueprintCallable, Category = "Camera")
+    void ToggleThirdPersonZoom();
+
+    /** Interact with currently focused interactable */
+    UFUNCTION(BlueprintCallable, Category = "Interaction")
+    void InteractWithTarget();
+
+    // === INTERACTION INTERFACE ===
+    
+    /** Get current effective interaction distance (compensated for camera mode) */
+    UFUNCTION(BlueprintPure, Category = "Interaction")
+    float GetEffectiveInteractionDistance() const { return CalculateEffectiveInteractionDistance(); }
+
+    /** Get current interactable if any */
+    UFUNCTION(BlueprintPure, Category = "Interaction")
+    AActor* GetCurrentInteractable() const { return CurrentInteractable; }
+
+    /** Check if we can currently interact with something */
+    UFUNCTION(BlueprintPure, Category = "Interaction")
+    bool CanInteract() const { return CurrentInteractable != nullptr; }
+
+    // === SETTINGS INTERFACE ===
     
     UFUNCTION(BlueprintCallable, Category = "Settings")
     void SetMouseSensitivity(float NewSensitivity);
@@ -278,14 +274,20 @@ protected:
 
     // === INTERACTION DETECTION ===
     
-    /** Update interaction detection - called every tick */
+    /** Update interaction detection - called every tick with camera distance compensation */
     void UpdateInteractionDetection();
 
-    /** Get trace start position based on camera mode */
+    /** Calculate effective interaction distance based on camera mode and position */
+    float CalculateEffectiveInteractionDistance() const;
+
+    /** Get trace start position based on camera mode with proper offset compensation */
     FVector GetInteractionTraceStart() const;
 
-    /** Get trace direction based on camera mode */
+    /** Get trace direction based on camera mode with crosshair alignment */
     FVector GetInteractionTraceDirection() const;
+
+    /** Process hit result from interaction trace */
+    void ProcessInteractionHit(bool bHit, const FHitResult& HitResult);
 
     /** Check if actor is interactable */
     bool IsActorInteractable(AActor* Actor) const;
@@ -309,4 +311,10 @@ private:
 
     /** Whether camera is currently transitioning */
     bool bIsTransitioningCamera;
+
+    // === DEBUG CONSOLE VARIABLES ===
+    #if WITH_EDITOR
+    /** Console variable for interaction debug visualization */
+    static class IConsoleVariable* CVarDebugInteraction;
+    #endif
 };

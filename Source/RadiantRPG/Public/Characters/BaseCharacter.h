@@ -14,8 +14,6 @@ class UManaComponent;
 class UStaminaComponent;
 class USkillsComponent;
 class UNeedsComponent;
-class UBrainComponent;
-class UPerceptionComponent;
 
 UENUM(BlueprintType)
 enum class ECharacterType : uint8
@@ -113,19 +111,6 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Optional Components")
     class USkillsComponent* SkillsComponent;
 
-    // === AI COMPONENTS (NPCs only) ===
-    
-    /** AI decision making brain - NPCs only */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI Components")
-    class UBrainComponent* BrainComponent;
-
-    /** Sensory perception system - NPCs only */  
-    //UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI Components")
-    //class UPerceptionComponent* PerceptionComponent;
-
-    /** Memory system for NPCs - stores experiences and knowledge */
-    //UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI Components")
-    //class UMemoryComponent* MemoryComponent;
 
     // === CHARACTER STATE ===
     
@@ -227,15 +212,6 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Components")
     UNeedsComponent* GetNeedsComponent() const { return NeedsComponent; }
-
-    UFUNCTION(BlueprintPure, Category = "Components")
-    UBrainComponent* GetBrainComponent() const { return BrainComponent; }
-
-    //UFUNCTION(BlueprintPure, Category = "Components")
-    //UPerceptionComponent* GetPerceptionComponent() const { return PerceptionComponent; }
-
-    //UFUNCTION(BlueprintPure, Category = "Components")
-    //UMemoryComponent* GetMemoryComponent() const { return MemoryComponent; }
 
     // === DEATH AND REVIVAL ===
     

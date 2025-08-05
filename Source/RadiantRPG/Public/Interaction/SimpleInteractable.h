@@ -130,6 +130,30 @@ public:
     virtual FInteractionData GetInteractionData_Implementation() const override;
     virtual bool CanInteract_Implementation(class ABaseCharacter* InteractingCharacter) const override;
 
+    UFUNCTION(BlueprintCallable, Category = "Rarity")
+    void SetItemRarity(EItemRarity NewRarity);
+
+    UFUNCTION(BlueprintCallable, Category = "Rarity")
+    EItemRarity GetItemRarity() const { return ItemRarity; }
+
+    UFUNCTION(BlueprintCallable, Category = "Rarity")
+    FLinearColor GetRarityColor() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Rarity")
+    EItemRarity DetermineRarityFromTags() const;
+
+    // NEW: Add this function to manually refresh rarity colors
+    UFUNCTION(BlueprintCallable, Category = "Rarity", CallInEditor)
+    void RefreshRarityColors();
+
+    // NEW: Add this function to populate default rarity colors
+    UFUNCTION(BlueprintCallable, Category = "Rarity", CallInEditor)
+    void PopulateDefaultRarityColors();
+
+    // NEW: Add this function to test rarity highlighting
+    UFUNCTION(BlueprintCallable, Category = "Rarity", CallInEditor)
+    void TestAllRarityColors();
+
     // Blueprint events
     UFUNCTION(BlueprintImplementableEvent, Category = "Interaction")
     void OnInteractionSuccessful(class ABaseCharacter* InteractingCharacter);
@@ -155,19 +179,6 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Visual")
     bool IsHighlighted() const { return bIsHighlighted; }
-
-    // Rarity functions
-    UFUNCTION(BlueprintCallable, Category = "Rarity")
-    void SetItemRarity(EItemRarity NewRarity);
-
-    UFUNCTION(BlueprintCallable, Category = "Rarity")
-    EItemRarity GetItemRarity() const { return ItemRarity; }
-
-    UFUNCTION(BlueprintCallable, Category = "Rarity")
-    FLinearColor GetRarityColor() const;
-
-    UFUNCTION(BlueprintCallable, Category = "Rarity")
-    EItemRarity DetermineRarityFromTags() const;
 
 protected:
     // Internal highlight functions

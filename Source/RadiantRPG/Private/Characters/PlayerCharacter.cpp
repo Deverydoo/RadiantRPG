@@ -1,5 +1,5 @@
 // Private/Characters/PlayerCharacter.cpp
-// Updated player character implementation with safe component architecture
+// Updated player character implementation with improved camera positioning and interaction tracing
 
 #include "Characters/PlayerCharacter.h"
 #include "Camera/CameraComponent.h"
@@ -37,10 +37,10 @@ APlayerCharacter::APlayerCharacter()
     GetCharacterMovement()->MinAnalogWalkSpeed = 20.0f;
     GetCharacterMovement()->BrakingDecelerationWalking = 2000.0f;
 
-    // Create third person camera boom
+    // Create third person camera boom (positioned to the right of player)
     ThirdPersonCameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("ThirdPersonCameraBoom"));
     ThirdPersonCameraBoom->SetupAttachment(RootComponent);
-    ThirdPersonCameraBoom->TargetArmLength = 300.0f;
+    ThirdPersonCameraBoom->TargetArmLength = 350.0f;
     ThirdPersonCameraBoom->bUsePawnControlRotation = true;
     ThirdPersonCameraBoom->bInheritPitch = true;
     ThirdPersonCameraBoom->bInheritYaw = true;
@@ -48,256 +48,90 @@ APlayerCharacter::APlayerCharacter()
     ThirdPersonCameraBoom->bDoCollisionTest = true;
     ThirdPersonCameraBoom->bEnableCameraLag = true;
     ThirdPersonCameraBoom->CameraLagSpeed = 3.0f;
+    ThirdPersonCameraBoom->CameraLagMaxDistance = 50.0f;
+    
+    // IMPORTANT: Position camera to the right of the player, not directly behind
+    // This creates the over-the-shoulder view like in the reference image
+    ThirdPersonCameraBoom->SocketOffset = FVector(0.0f, 80.0f, 40.0f); // Right and up offset
+    ThirdPersonCameraBoom->TargetOffset = FVector(0.0f, 0.0f, 60.0f);   // Look slightly above character center
 
     // Create third person camera
     ThirdPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("ThirdPersonCamera"));
     ThirdPersonCamera->SetupAttachment(ThirdPersonCameraBoom, USpringArmComponent::SocketName);
     ThirdPersonCamera->bUsePawnControlRotation = false;
 
-    // Create first person camera
+    // Create first person camera attached to head/neck area
     FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-    FirstPersonCamera->SetupAttachment(GetMesh(), FName("head"));
+    FirstPersonCamera->SetupAttachment(GetMesh(), TEXT("head")); // Attach to head socket if available
+    FirstPersonCamera->SetRelativeLocation(FVector(10.0f, 0.0f, 0.0f));
     FirstPersonCamera->bUsePawnControlRotation = true;
 
     // Initialize camera settings
     CurrentCameraMode = ECameraMode::ThirdPerson;
     CurrentZoomLevel = EThirdPersonZoom::Close;
     CameraTransitionSpeed = 5.0f;
-    ThirdPersonCloseDistance = 180.0f;
-    ThirdPersonFarDistance = 350.0f;
+    ThirdPersonCloseDistance = 250.0f;
+    ThirdPersonFarDistance = 500.0f;
     ThirdPersonCameraLag = 3.0f;
-    FirstPersonCameraOffset = FVector::ZeroVector;
+    FirstPersonCameraOffset = FVector(10.0f, 0.0f, 0.0f);
 
-    // Initialize input settings (still stored on character for settings persistence)
+    // Input settings
     MouseSensitivity = 1.0f;
     GamepadSensitivity = 1.0f;
     bInvertMouseY = false;
-    bUseTankControls = true; // Default to Oblivion-style controls
-    RotationSpeed = 1.5f;
+    bUseTankControls = false;
+    RotationSpeed = 1.0f;
 
-    // Initialize interaction settings with proper collision channel
-    BaseInteractionDistance = 200.0f;
+    // Interaction settings - CRITICAL: Adjust for camera distance
+    BaseInteractionDistance = 300.0f; // Increased base distance
     InteractionSphereRadius = 15.0f;
-    InteractionTraceChannel = ECC_GameTraceChannel1; // Our custom "Interaction" channel
-    bShowInteractionDebug = false;
+    InteractionChannel = ECC_GameTraceChannel1; // Custom Interaction channel
 
-    // Initialize state
-    CurrentInteractable = nullptr;
-    CurrentInteractionPoint = FVector::ZeroVector;
-    CurrentInteractionNormal = FVector::ZeroVector;
-    bIsSprinting = false;
-    MovementInput = FVector2D::ZeroVector;
-    LookInput = FVector2D::ZeroVector;
-
-    // Initialize cache
-    CachedControlRotation = FRotator::ZeroRotator;
+    // Performance optimization
     LastControlRotationUpdate = 0.0f;
     CameraTransitionProgress = 1.0f;
     bIsTransitioningCamera = false;
 
-    // Add default player tags
-    CharacterActorTags.Add(FName("Player"));
-    
-    // Add gameplay tags for player capabilities
-    CharacterTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Character.Player")));
-    CharacterTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Character.Physical")));
-    CharacterTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Character.Learning")));
+    // Set proper collision for interaction
+    GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore);
 }
 
 void APlayerCharacter::BeginPlay()
 {
     Super::BeginPlay();
-
-    // Initialize player-specific components
+    
     InitializePlayerComponents();
-
-    // Set up camera mode
     UpdateCameraMode();
-
-    UE_LOG(LogTemp, Log, TEXT("PlayerCharacter initialized with %s camera mode"), 
-           CurrentCameraMode == ECameraMode::FirstPerson ? TEXT("First Person") : TEXT("Third Person"));
 }
 
 void APlayerCharacter::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-
-    // Update interaction detection every frame for responsiveness
+    
+    UpdateCameraMode();
     UpdateInteractionDetection();
-
-    // Update sprint state
     UpdateSprintState();
-
-    // Update camera transition if active
-    if (bIsTransitioningCamera)
-    {
-        CameraTransitionProgress += DeltaTime * CameraTransitionSpeed;
-        if (CameraTransitionProgress >= 1.0f)
-        {
-            CameraTransitionProgress = 1.0f;
-            bIsTransitioningCamera = false;
-        }
-    }
 }
 
-// === INPUT PROCESSING FUNCTIONS (Called by PlayerController) ===
-
-void APlayerCharacter::HandleMoveInput(const FInputActionValue& Value)
+void APlayerCharacter::InitializePlayerComponents()
 {
-    FVector2D MovementVector = Value.Get<FVector2D>();
-    MovementInput = MovementVector;
-
-    if (Controller != nullptr && MovementVector.SizeSquared() > 0.0f)
+    // Additional player-specific initialization
+    if (FirstPersonCamera && GetMesh())
     {
-        if (bUseTankControls)
+        // Try to attach to head socket, fallback to relative positioning
+        if (GetMesh()->DoesSocketExist(TEXT("head")))
         {
-            HandleTankMovement(MovementVector);
+            FirstPersonCamera->AttachToComponent(GetMesh(), 
+                FAttachmentTransformRules::SnapToTargetIncludingScale, TEXT("head"));
         }
         else
         {
-            HandleModernMovement(MovementVector);
+            FirstPersonCamera->SetRelativeLocation(FirstPersonCameraOffset);
         }
     }
 }
 
-void APlayerCharacter::HandleLookInput(const FVector2D& ProcessedLookInput)
-{
-    // Input is already processed by controller (sensitivity and invert applied)
-    LookInput = ProcessedLookInput;
-
-    if (Controller != nullptr)
-    {
-        AddControllerYawInput(ProcessedLookInput.X);
-        AddControllerPitchInput(ProcessedLookInput.Y);
-    }
-}
-
-void APlayerCharacter::HandleZoomInput(const FInputActionValue& Value)
-{
-    float ZoomValue = Value.Get<float>();
-    
-    // Only zoom in third person mode
-    if (CurrentCameraMode == ECameraMode::ThirdPerson)
-    {
-        if (ZoomValue > 0.0f)
-        {
-            // Zoom in
-            if (CurrentZoomLevel == EThirdPersonZoom::Far)
-            {
-                SetZoomLevel(EThirdPersonZoom::Close);
-            }
-        }
-        else if (ZoomValue < 0.0f)
-        {
-            // Zoom out
-            if (CurrentZoomLevel == EThirdPersonZoom::Close)
-            {
-                SetZoomLevel(EThirdPersonZoom::Far);
-            }
-        }
-    }
-}
-
-// === MOVEMENT PROCESSING ===
-
-void APlayerCharacter::HandleTankMovement(const FVector2D& MovementVector)
-{
-    // Tank controls like Oblivion
-    // Forward/Back: Move forward/backward relative to character facing
-    // Left/Right: Rotate character left/right
-    
-    if (FMath::Abs(MovementVector.Y) > 0.0f)
-    {
-        // Forward/backward movement
-        AddMovementInput(GetActorForwardVector(), MovementVector.Y);
-    }
-    
-    if (FMath::Abs(MovementVector.X) > 0.0f)
-    {
-        // Left/right rotation
-        AddControllerYawInput(MovementVector.X * RotationSpeed);
-    }
-}
-
-void APlayerCharacter::HandleModernMovement(const FVector2D& MovementVector)
-{
-    // Modern controls - strafe left/right, camera-relative forward/back
-    const FRotator Rotation = Controller->GetControlRotation();
-    const FRotator YawRotation(0, Rotation.Yaw, 0);
-
-    // Forward/backward movement
-    if (FMath::Abs(MovementVector.Y) > 0.0f)
-    {
-        const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-        AddMovementInput(Direction, MovementVector.Y);
-    }
-
-    // Left/right movement (strafe)
-    if (FMath::Abs(MovementVector.X) > 0.0f)
-    {
-        const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-        AddMovementInput(Direction, MovementVector.X);
-    }
-}
-
-// === CAMERA INTERFACE ===
-
-void APlayerCharacter::ToggleCameraMode()
-{
-    ECameraMode NewMode = (CurrentCameraMode == ECameraMode::ThirdPerson) ? 
-                         ECameraMode::FirstPerson : ECameraMode::ThirdPerson;
-    SetCameraMode(NewMode);
-}
-
-void APlayerCharacter::SetCameraMode(ECameraMode NewMode)
-{
-    if (CurrentCameraMode == NewMode)
-        return;
-
-    CurrentCameraMode = NewMode;
-    UpdateCameraMode();
-    
-    // Start camera transition
-    CameraTransitionProgress = 0.0f;
-    bIsTransitioningCamera = true;
-
-    // Adjust controls based on camera mode
-    if (CurrentCameraMode == ECameraMode::FirstPerson)
-    {
-        bUseTankControls = false; // Use modern controls in first person
-    }
-    else
-    {
-        bUseTankControls = true; // Use tank controls in third person
-    }
-
-    OnCameraModeChanged.Broadcast(CurrentCameraMode);
-    
-    UE_LOG(LogTemp, Log, TEXT("Player switched to %s camera mode"), 
-           CurrentCameraMode == ECameraMode::FirstPerson ? TEXT("First Person") : TEXT("Third Person"));
-}
-
-void APlayerCharacter::CycleZoomLevel()
-{
-    if (CurrentCameraMode != ECameraMode::ThirdPerson)
-        return;
-
-    EThirdPersonZoom NewZoom = (CurrentZoomLevel == EThirdPersonZoom::Close) ? 
-                              EThirdPersonZoom::Far : EThirdPersonZoom::Close;
-    SetZoomLevel(NewZoom);
-}
-
-void APlayerCharacter::SetZoomLevel(EThirdPersonZoom NewZoom)
-{
-    if (CurrentZoomLevel == NewZoom)
-        return;
-
-    CurrentZoomLevel = NewZoom;
-    UpdateThirdPersonCameraSettings();
-
-    UE_LOG(LogTemp, Log, TEXT("Player zoom level changed to %s"), 
-           CurrentZoomLevel == EThirdPersonZoom::Close ? TEXT("Close") : TEXT("Far"));
-}
+// === CAMERA MANAGEMENT ===
 
 UCameraComponent* APlayerCharacter::GetActiveCamera() const
 {
@@ -306,25 +140,24 @@ UCameraComponent* APlayerCharacter::GetActiveCamera() const
 
 void APlayerCharacter::UpdateCameraMode()
 {
-    switch (CurrentCameraMode)
+    if (bIsTransitioningCamera)
     {
-        case ECameraMode::ThirdPerson:
+        CameraTransitionProgress = FMath::Clamp(CameraTransitionProgress + GetWorld()->GetDeltaSeconds() * CameraTransitionSpeed, 0.0f, 1.0f);
+        
+        if (CameraTransitionProgress >= 1.0f)
         {
-            ThirdPersonCamera->SetActive(true);
-            FirstPersonCamera->SetActive(false);
-            GetMesh()->SetVisibility(true);
-            GetMesh()->SetOwnerNoSee(false);
-            UpdateThirdPersonCameraSettings();
-            break;
+            bIsTransitioningCamera = false;
         }
-        case ECameraMode::FirstPerson:
-        {
-            FirstPersonCamera->SetActive(true);
-            ThirdPersonCamera->SetActive(false);
-            GetMesh()->SetVisibility(false);
-            GetMesh()->SetOwnerNoSee(true);
-            break;
-        }
+    }
+
+    // Update third person camera settings
+    UpdateThirdPersonCameraSettings();
+
+    // Ensure proper camera activation
+    if (ThirdPersonCamera && FirstPersonCamera)
+    {
+        ThirdPersonCamera->SetActive(CurrentCameraMode == ECameraMode::ThirdPerson);
+        FirstPersonCamera->SetActive(CurrentCameraMode == ECameraMode::FirstPerson);
     }
 }
 
@@ -334,16 +167,18 @@ void APlayerCharacter::UpdateThirdPersonCameraSettings()
         return;
 
     float TargetDistance = (CurrentZoomLevel == EThirdPersonZoom::Close) ? 
-                          ThirdPersonCloseDistance : ThirdPersonFarDistance;
+        ThirdPersonCloseDistance : ThirdPersonFarDistance;
     
     ThirdPersonCameraBoom->TargetArmLength = TargetDistance;
     ThirdPersonCameraBoom->CameraLagSpeed = ThirdPersonCameraLag;
     ThirdPersonCameraBoom->CameraLagMaxDistance = 50.0f;
-    ThirdPersonCameraBoom->SocketOffset = FVector(0.0f, 0.0f, 20.0f);
-    ThirdPersonCameraBoom->TargetOffset = FVector(0.0f, 0.0f, 40.0f);
+    
+    // Maintain the right-side offset regardless of zoom
+    ThirdPersonCameraBoom->SocketOffset = FVector(0.0f, 80.0f, 40.0f);
+    ThirdPersonCameraBoom->TargetOffset = FVector(0.0f, 0.0f, 60.0f);
 }
 
-// === INTERACTION INTERFACE ===
+// === INTERACTION SYSTEM ===
 
 void APlayerCharacter::UpdateInteractionDetection()
 {
@@ -358,225 +193,344 @@ void APlayerCharacter::UpdateInteractionDetection()
         LastControlRotationUpdate = CurrentTime;
     }
 
-    // Perform interaction trace using our custom collision channel
-    FHitResult HitResult;
+    // Get trace parameters with camera distance compensation
     FVector TraceStart = GetInteractionTraceStart();
     FVector TraceDirection = GetInteractionTraceDirection();
-    FVector TraceEnd = TraceStart + (TraceDirection * BaseInteractionDistance);
     
+    // CRITICAL FIX: Calculate effective interaction distance based on camera mode and distance
+    float EffectiveInteractionDistance = CalculateEffectiveInteractionDistance();
+    FVector TraceEnd = TraceStart + (TraceDirection * EffectiveInteractionDistance);
+    
+    // Enhanced collision query params
     FCollisionQueryParams QueryParams;
     QueryParams.AddIgnoredActor(this);
     QueryParams.bTraceComplex = false;
     QueryParams.bReturnPhysicalMaterial = false;
+    QueryParams.bIgnoreBlocks = false;
     
-    // Use sphere sweep on our custom Interaction trace channel
+    // Perform primary interaction trace using sphere sweep for better reliability
+    FHitResult HitResult;
     bool bHit = GetWorld()->SweepSingleByChannel(
         HitResult,
         TraceStart,
         TraceEnd,
         FQuat::Identity,
-        InteractionTraceChannel, // ECC_GameTraceChannel1 = "Interaction"
+        InteractionChannel,
         FCollisionShape::MakeSphere(InteractionSphereRadius),
         QueryParams
     );
-    
-    // Alternative: Use object type query for Interactable objects
-    // This will hit objects with the "Interactable" object type
-    if (!bHit)
+
+    // Debug visualization (only in development builds)
+    #if WITH_EDITOR
+    if (CVarDebugInteraction && CVarDebugInteraction->GetInt() > 0)
     {
-        TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes;
-        ObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_GameTraceChannel3)); // "Interactable" object type
-        
-        FCollisionObjectQueryParams ObjectQueryParams(ObjectTypes);
-        
-        bHit = GetWorld()->SweepSingleByObjectType(
-            HitResult,
-            TraceStart,
-            TraceEnd,
-            FQuat::Identity,
-            ObjectQueryParams,
-            FCollisionShape::MakeSphere(InteractionSphereRadius),
-            QueryParams
-        );
-    }
-    
-    AActor* PreviousInteractable = CurrentInteractable;
-    AActor* NewInteractable = (bHit && IsActorInteractable(HitResult.GetActor())) ? HitResult.GetActor() : nullptr;
-    
-    // Handle interactable changes
-    if (NewInteractable != PreviousInteractable)
-    {
-        // Handle focus lost
-        if (PreviousInteractable && PreviousInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
-        {
-            IInteractableInterface::Execute_OnInteractionFocusLost(PreviousInteractable, this);
-        }
-        
-        CurrentInteractable = NewInteractable;
-        
-        // Handle focus gained
-        if (CurrentInteractable)
-        {
-            CurrentInteractionPoint = HitResult.Location;
-            CurrentInteractionNormal = HitResult.Normal;
-            
-            if (CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
-            {
-                IInteractableInterface::Execute_OnInteractionFocusGained(CurrentInteractable, this);
-            }
-            
-            OnInteractableDetected.Broadcast(CurrentInteractable, true);
-        }
-        else
-        {
-            CurrentInteractionPoint = FVector::ZeroVector;
-            CurrentInteractionNormal = FVector::ZeroVector;
-            OnInteractableDetected.Broadcast(nullptr, false);
-        }
-    }
-    
-    // Debug visualization
-    if (bShowInteractionDebug)
-    {
-        FColor DebugColor = bHit ? (NewInteractable ? FColor::Green : FColor::Yellow) : FColor::Red;
-        DrawDebugLine(GetWorld(), TraceStart, TraceEnd, DebugColor, false, 0.0f, 0, 2.0f);
+        FColor DebugColor = bHit ? FColor::Green : FColor::Red;
+        DrawDebugLine(GetWorld(), TraceStart, TraceEnd, DebugColor, false, 0.1f, 0, 2.0f);
+        DrawDebugSphere(GetWorld(), TraceStart, 5.0f, 8, FColor::Blue, false, 0.1f);
         
         if (bHit)
         {
-            DrawDebugSphere(GetWorld(), HitResult.Location, 5.0f, 8, FColor::Orange, false, 0.0f, 0, 1.0f);
-            
-            // Draw interaction sphere at hit location
-            DrawDebugSphere(GetWorld(), HitResult.Location, InteractionSphereRadius, 12, DebugColor, false, 0.0f, 0, 1.0f);
+            DrawDebugSphere(GetWorld(), HitResult.Location, InteractionSphereRadius, 12, FColor::Yellow, false, 0.1f);
         }
-        
-        // Always draw the trace sphere at the end point
-        DrawDebugSphere(GetWorld(), TraceEnd, InteractionSphereRadius, 12, FColor::Blue, false, 0.0f, 0, 0.5f);
     }
+    #endif
+
+    // Process hit result
+    ProcessInteractionHit(bHit, HitResult);
+}
+
+float APlayerCharacter::CalculateEffectiveInteractionDistance() const
+{
+    float EffectiveDistance = BaseInteractionDistance;
+    
+    if (CurrentCameraMode == ECameraMode::ThirdPerson && ThirdPersonCameraBoom)
+    {
+        // CRITICAL FIX: Add camera distance to interaction range for third person
+        // This compensates for the camera being behind the character
+        float CameraDistance = ThirdPersonCameraBoom->TargetArmLength;
+        EffectiveDistance += CameraDistance * 0.7f; // 70% of camera distance compensation
+        
+        // Additional compensation for camera offset to the right
+        EffectiveDistance += 100.0f; // Extra range to account for angle offset
+    }
+    
+    return EffectiveDistance;
 }
 
 FVector APlayerCharacter::GetInteractionTraceStart() const
 {
-    if (UCameraComponent* ActiveCamera = GetActiveCamera())
+    UCameraComponent* ActiveCamera = GetActiveCamera();
+    if (ActiveCamera && IsValid(ActiveCamera))
     {
-        return ActiveCamera->GetComponentLocation();
+        FVector CameraLocation = ActiveCamera->GetComponentLocation();
+        
+        // For third person, start trace from camera but adjust for better targeting
+        if (CurrentCameraMode == ECameraMode::ThirdPerson)
+        {
+            // Move trace start towards the character to account for camera offset
+            FVector ToCharacter = (GetActorLocation() - CameraLocation).GetSafeNormal();
+            CameraLocation += ToCharacter * 80.0f; // Move 80cm towards character
+            
+            // Also adjust for the right-side camera offset by angling slightly left
+            FVector RightVector = ActiveCamera->GetRightVector();
+            CameraLocation -= RightVector * 30.0f; // Adjust 30cm to the left
+        }
+        
+        return CameraLocation;
     }
     
-    // Fallback to character eye level
-    return GetActorLocation() + FVector(0.0f, 0.0f, BaseEyeHeight);
+    // Enhanced fallback - use character's eye level with proper third-person offset
+    FVector EyeLocation = GetActorLocation() + FVector(0.0f, 0.0f, BaseEyeHeight);
+    
+    if (CurrentCameraMode == ECameraMode::ThirdPerson)
+    {
+        // For third person fallback, start from in front of character
+        FVector ForwardVector = GetActorForwardVector();
+        FVector RightVector = GetActorRightVector();
+        
+        // Position similar to where camera would be looking from
+        EyeLocation += ForwardVector * 100.0f;  // Forward offset
+        EyeLocation += RightVector * 50.0f;     // Right offset to match camera
+        EyeLocation += FVector(0.0f, 0.0f, 30.0f); // Slight height adjustment
+    }
+    
+    return EyeLocation;
 }
 
 FVector APlayerCharacter::GetInteractionTraceDirection() const
 {
-    if (UCameraComponent* ActiveCamera = GetActiveCamera())
+    UCameraComponent* ActiveCamera = GetActiveCamera();
+    if (ActiveCamera && IsValid(ActiveCamera))
     {
-        return ActiveCamera->GetForwardVector();
+        FVector CameraForward = ActiveCamera->GetForwardVector();
+        
+        // For third person, adjust the trace direction to account for crosshair alignment
+        if (CurrentCameraMode == ECameraMode::ThirdPerson)
+        {
+            // Calculate where the crosshair is actually pointing
+            FVector TraceStart = GetInteractionTraceStart();
+            FVector ScreenCenter = ActiveCamera->GetComponentLocation() + (CameraForward * 1000.0f);
+            
+            // Direct the trace towards where the crosshair points, not just camera forward
+            FVector AdjustedDirection = (ScreenCenter - TraceStart).GetSafeNormal();
+            return AdjustedDirection;
+        }
+        
+        return CameraForward;
     }
     
-    // Fallback to control rotation
+    // Fallback to cached control rotation
     return CachedControlRotation.Vector();
+}
+
+void APlayerCharacter::ProcessInteractionHit(bool bHit, const FHitResult& HitResult)
+{
+    AActor* NewInteractable = nullptr;
+    bool bCanInteract = false;
+
+    if (bHit && HitResult.GetActor())
+    {
+        AActor* HitActor = HitResult.GetActor();
+        if (IsActorInteractable(HitActor))
+        {
+            NewInteractable = HitActor;
+            bCanInteract = true;
+        }
+    }
+
+    // Update current interactable if changed
+    if (CurrentInteractable != NewInteractable)
+    {
+        // Clear previous interactable
+        if (CurrentInteractable && IsValid(CurrentInteractable))
+        {
+            if (CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
+            {
+                IInteractableInterface::Execute_EndFocus(CurrentInteractable, this);
+            }
+        }
+
+        // Set new interactable
+        CurrentInteractable = NewInteractable;
+
+        // Focus new interactable
+        if (CurrentInteractable && IsValid(CurrentInteractable))
+        {
+            if (CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
+            {
+                IInteractableInterface::Execute_StartFocus(CurrentInteractable, this);
+            }
+        }
+
+        // Broadcast interaction state change
+        OnInteractableDetected.Broadcast(CurrentInteractable, bCanInteract);
+    }
 }
 
 bool APlayerCharacter::IsActorInteractable(AActor* Actor) const
 {
-    if (!Actor)
+    if (!Actor || !IsValid(Actor))
         return false;
     
-    // Check for interactable interface
+    // Check for interactable interface first
     if (Actor->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
     {
         return IInteractableInterface::Execute_CanInteract(Actor, const_cast<APlayerCharacter*>(this));
     }
     
-    // Fallback to tag check
-    return Actor->Tags.Contains(FName("Interactable"));
-}
-
-void APlayerCharacter::TryInteract()
-{
-    if (CurrentInteractable && CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
-    {
-        bool bInteractionSuccess = IInteractableInterface::Execute_OnInteract(
-            CurrentInteractable, 
-            this, 
-            CurrentInteractionPoint, 
-            CurrentInteractionNormal
-        );
-        
-        if (bInteractionSuccess)
-        {
-            UE_LOG(LogTemp, Log, TEXT("Player successfully interacted with %s"), *CurrentInteractable->GetName());
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("Player interaction with %s failed"), *CurrentInteractable->GetName());
-        }
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("No valid interactable target found"));
-    }
+    // Fallback to actor tags
+    return Actor->ActorHasTag(FName("Interactable"));
 }
 
 // === MOVEMENT INTERFACE ===
 
-void APlayerCharacter::StartSprinting()
+void APlayerCharacter::MoveCharacter(const FVector2D& MovementVector)
 {
-    if (!CanSprint())
+    if (Controller && MovementVector.SizeSquared() > 0.0f)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Cannot sprint - insufficient stamina or conditions not met"));
-        return;
+        if (bUseTankControls)
+        {
+            HandleTankMovement(MovementVector);
+        }
+        else
+        {
+            HandleModernMovement(MovementVector);
+        }
     }
-
-    bIsSprinting = true;
-    GetCharacterMovement()->MaxWalkSpeed = 600.0f; // Sprint speed
-    
-    // Start continuous stamina drain
-    if (StaminaComponent)
-    {
-        FStaminaCostInfo SprintCost;
-        SprintCost.BaseCost = 10.0f; // Cost per second
-        SprintCost.Activity = EStaminaActivity::Sprinting;
-        SprintCost.bIsContinuous = true;
-        SprintCost.Actor = this;
-        
-        StaminaComponent->StartContinuousActivity(SprintCost);
-    }
-    
-    UE_LOG(LogTemp, Log, TEXT("Player started sprinting"));
 }
 
-void APlayerCharacter::StopSprinting()
+void APlayerCharacter::HandleTankMovement(const FVector2D& MovementVector)
 {
-    if (!bIsSprinting)
-        return;
+    // Tank controls: Forward/Back for movement, Left/Right for rotation
+    float ForwardInput = MovementVector.Y;
+    float RotationInput = MovementVector.X;
 
-    bIsSprinting = false;
-    GetCharacterMovement()->MaxWalkSpeed = 300.0f; // Normal walk speed
-    
-    // Stop continuous stamina drain
-    if (StaminaComponent)
+    // Apply forward/backward movement
+    if (FMath::Abs(ForwardInput) > 0.0f)
     {
-        StaminaComponent->StopContinuousActivity(EStaminaActivity::Sprinting);
+        FVector ForwardDirection = GetActorForwardVector();
+        AddMovementInput(ForwardDirection, ForwardInput);
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("Player stopped sprinting"));
+
+    // Apply rotation
+    if (FMath::Abs(RotationInput) > 0.0f)
+    {
+        float RotationRate = RotationSpeed * GetWorld()->GetDeltaSeconds();
+        FRotator DeltaRotation(0.0f, RotationInput * RotationRate * 100.0f, 0.0f);
+        AddActorWorldRotation(DeltaRotation);
+    }
 }
 
-bool APlayerCharacter::CanSprint() const
+void APlayerCharacter::HandleModernMovement(const FVector2D& MovementVector)
 {
-    if (!StaminaComponent)
-        return false;
-        
-    // Need at least 20% stamina to start sprinting and not be exhausted
-    return StaminaComponent->GetStaminaPercent() >= 0.2f && !StaminaComponent->IsExhausted();
+    // Modern controls: WASD for movement relative to camera
+    const FRotator ControllerRotation = Controller->GetControlRotation();
+    const FRotator YawRotation(0, ControllerRotation.Yaw, 0);
+
+    const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+    const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+    AddMovementInput(ForwardDirection, MovementVector.Y);
+    AddMovementInput(RightDirection, MovementVector.X);
 }
 
 void APlayerCharacter::UpdateSprintState()
 {
-    // Auto-stop sprinting if conditions are no longer met
-    if (bIsSprinting && !CanSprint())
+    UStaminaComponent* StaminaComp = GetStaminaComponent();
+    if (!StaminaComp)
+        return;
+
+    bool bWantsToSprint = bIsSprinting && GetVelocity().SizeSquared() > FMath::Square(50.0f);
+    
+    if (bWantsToSprint && StaminaComp->CanSprint())
     {
-        StopSprinting();
+        if (!StaminaComp->IsSprintActive())
+        {
+            StaminaComp->StartSprint();
+        }
+    }
+    else
+    {
+        if (StaminaComp->IsSprintActive())
+        {
+            StaminaComp->StopSprint();
+        }
+    }
+}
+
+// === INPUT INTERFACE ===
+
+void APlayerCharacter::StartSprint()
+{
+    bIsSprinting = true;
+}
+
+void APlayerCharacter::StopSprint()
+{
+    bIsSprinting = false;
+}
+
+void APlayerCharacter::StartJump()
+{
+    Jump();
+}
+
+void APlayerCharacter::StopJump()
+{
+    StopJumping();
+}
+
+void APlayerCharacter::ToggleCameraMode()
+{
+    ECameraMode NewMode = (CurrentCameraMode == ECameraMode::FirstPerson) ? 
+        ECameraMode::ThirdPerson : ECameraMode::FirstPerson;
+    
+    SetCameraMode(NewMode);
+}
+
+void APlayerCharacter::ToggleThirdPersonZoom()
+{
+    if (CurrentCameraMode == ECameraMode::ThirdPerson)
+    {
+        EThirdPersonZoom NewZoom = (CurrentZoomLevel == EThirdPersonZoom::Close) ?
+            EThirdPersonZoom::Far : EThirdPersonZoom::Close;
+        
+        SetThirdPersonZoom(NewZoom);
+    }
+}
+
+void APlayerCharacter::InteractWithTarget()
+{
+    if (CurrentInteractable && IsValid(CurrentInteractable))
+    {
+        if (CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
+        {
+            IInteractableInterface::Execute_Interact(CurrentInteractable, this);
+        }
+    }
+}
+
+// === CAMERA SETTINGS ===
+
+void APlayerCharacter::SetCameraMode(ECameraMode NewMode)
+{
+    if (CurrentCameraMode != NewMode)
+    {
+        CurrentCameraMode = NewMode;
+        bIsTransitioningCamera = true;
+        CameraTransitionProgress = 0.0f;
+        
+        OnCameraModeChanged.Broadcast(CurrentCameraMode);
+    }
+}
+
+void APlayerCharacter::SetThirdPersonZoom(EThirdPersonZoom NewZoom)
+{
+    if (CurrentZoomLevel != NewZoom)
+    {
+        CurrentZoomLevel = NewZoom;
+        bIsTransitioningCamera = true;
+        CameraTransitionProgress = 0.0f;
     }
 }
 
@@ -595,40 +549,4 @@ void APlayerCharacter::SetGamepadSensitivity(float NewSensitivity)
 void APlayerCharacter::SetInvertMouseY(bool bInvert)
 {
     bInvertMouseY = bInvert;
-}
-
-// === INITIALIZATION ===
-
-void APlayerCharacter::InitializePlayerComponents()
-{
-    // All player components are now created in constructor, so just log success
-    UE_LOG(LogTemp, Log, TEXT("Player-specific component initialization completed"));
-    
-    // Verify all expected components exist
-    if (StaminaComponent)
-    {
-        UE_LOG(LogTemp, Log, TEXT("StaminaComponent ready"));
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("StaminaComponent missing!"));
-    }
-    
-    if (ManaComponent)
-    {
-        UE_LOG(LogTemp, Log, TEXT("ManaComponent ready"));
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("ManaComponent missing!"));
-    }
-    
-    if (SkillsComponent)
-    {
-        UE_LOG(LogTemp, Log, TEXT("SkillsComponent ready"));
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("SkillsComponent missing!"));
-    }
 }

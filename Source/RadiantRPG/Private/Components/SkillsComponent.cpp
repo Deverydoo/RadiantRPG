@@ -2,187 +2,145 @@
 
 #include "Components/SkillsComponent.h"
 #include "Characters/BaseCharacter.h"
+#include "Types/RadiantTypes.h"
 #include "Engine/DataTable.h"
-#include "Engine/World.h"
+#include "Net/UnrealNetwork.h"
 
 USkillsComponent::USkillsComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
-
-    // Ultima Online inspired settings
-    TotalSkillCap = 700.0f; // Total skill points allowed
-    IndividualSkillCap = 100.0f; // Max for any single skill
-    ExperienceGainMultiplier = 1.0f;
-    bAllowSkillLoss = true; // Skills can decay when at cap
-    SkillLossRate = 0.1f; // How much skills decay per point gained elsewhere
+    bWantsInitializeComponent = true;
     
+    // Set defaults
+    TotalSkillCap = 700.0f;
+    ExperienceGainMultiplier = 1.0f;
+    bEnforceSkillCaps = true;
     CurrentTotalSkillPoints = 0.0f;
-    OwnerCharacter = nullptr;
-    SkillDataTable = nullptr;
+    
+    SetIsReplicatedByDefault(true);
+}
+
+void USkillsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    
+    DOREPLIFETIME(USkillsComponent, Skills);
+    DOREPLIFETIME(USkillsComponent, CurrentTotalSkillPoints);
 }
 
 void USkillsComponent::BeginPlay()
 {
     Super::BeginPlay();
-
-    // Cache owner reference
+    
     OwnerCharacter = Cast<ABaseCharacter>(GetOwner());
-    
-    // Initialize skills from data table if available
-    if (SkillDataTable)
-    {
-        InitializeSkillsFromDataTable();
-    }
-    else
-    {
-        // Initialize with default starting skills
-        InitializeDefaultSkills();
-    }
-    
-    UpdateTotalSkillPoints();
-    
-    UE_LOG(LogTemp, Log, TEXT("SkillsComponent initialized for %s with %f total skill points"), 
-           OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"), 
-           CurrentTotalSkillPoints);
+    InitializeDefaultSkills();
+}
+
+void USkillsComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 }
 
 void USkillsComponent::InitializeDefaultSkills()
 {
-    // Initialize all skill types with starting values
-    TArray<ESkillType> AllSkillTypes = {
-        ESkillType::OneHanded, ESkillType::TwoHanded, ESkillType::Archery, ESkillType::Block,
-        ESkillType::HeavyArmor, ESkillType::LightArmor, ESkillType::Destruction, ESkillType::Restoration,
-        ESkillType::Illusion, ESkillType::Conjuration, ESkillType::Enchanting, ESkillType::Alchemy,
-        ESkillType::Sneak, ESkillType::Lockpicking, ESkillType::Pickpocket, ESkillType::Smithing,
-        ESkillType::Tailoring, ESkillType::Cooking, ESkillType::Athletics, ESkillType::Acrobatics,
-        ESkillType::Speechcraft, ESkillType::Mercantile, ESkillType::Lore, ESkillType::Survival
+    if (Skills.Num() > 0)
+        return; // Already initialized
+    
+    // Initialize basic skills with starting values
+    TArray<ESkillType> AllSkills = {
+        ESkillType::OneHanded,
+        ESkillType::TwoHanded,
+        ESkillType::Marksman,
+        ESkillType::Block,
+        ESkillType::Smithing,
+        ESkillType::HeavyArmor,
+        ESkillType::LightArmor,
+        ESkillType::Pickpocket,
+        ESkillType::Lockpicking,
+        ESkillType::Sneak,
+        ESkillType::Alchemy,
+        ESkillType::Speech,
+        ESkillType::Alteration,
+        ESkillType::Conjuration,
+        ESkillType::Destruction,
+        ESkillType::Illusion,
+        ESkillType::Restoration,
+        ESkillType::Enchanting
     };
     
-    for (ESkillType SkillType : AllSkillTypes)
+    for (ESkillType SkillType : AllSkills)
     {
-        FSkillData NewSkill;
-        NewSkill.SkillType = SkillType;
-        NewSkill.CurrentValue = 5.0f; // Starting skill level
-        NewSkill.Experience = 0.0f;
-        NewSkill.bIsLocked = false;
-        NewSkill.Modifier = 0.0f;
+        FLegacySkillData SkillData;
+        SkillData.CurrentValue = 5.0f;
+        SkillData.MaxValue = 100.0f;
+        SkillData.Experience = 0.0f;
+        SkillData.TotalExperience = 0.0f;
+        SkillData.TemporaryModifier = 0.0f;
+        SkillData.Modifier = 0.0f;
+        SkillData.bIsLocked = false;
         
-        Skills.Add(SkillType, NewSkill);
-    }
-}
-
-void USkillsComponent::InitializeSkillsFromDataTable()
-{
-    if (!SkillDataTable)
-        return;
-        
-    // Clear existing skills
-    Skills.Empty();
-    
-    // Get all skill types from enum
-    TArray<ESkillType> AllSkillTypes = {
-        ESkillType::OneHanded, ESkillType::TwoHanded, ESkillType::Archery, ESkillType::Block,
-        ESkillType::HeavyArmor, ESkillType::LightArmor, ESkillType::Destruction, ESkillType::Restoration,
-        ESkillType::Illusion, ESkillType::Conjuration, ESkillType::Enchanting, ESkillType::Alchemy,
-        ESkillType::Sneak, ESkillType::Lockpicking, ESkillType::Pickpocket, ESkillType::Smithing,
-        ESkillType::Tailoring, ESkillType::Cooking, ESkillType::Athletics, ESkillType::Acrobatics,
-        ESkillType::Speechcraft, ESkillType::Mercantile, ESkillType::Lore, ESkillType::Survival
-    };
-    
-    for (ESkillType SkillType : AllSkillTypes)
-    {
-        FString SkillName = UEnum::GetValueAsString(SkillType);
-        FName RowName = FName(*SkillName);
-        
-        FSkillTableRow* SkillRow = SkillDataTable->FindRow<FSkillTableRow>(RowName, TEXT(""));
-        
-        FSkillData NewSkill;
-        NewSkill.SkillType = SkillType;
-        
-        if (SkillRow)
-        {
-            NewSkill.CurrentValue = SkillRow->StartingValue;
-        }
-        else
-        {
-            NewSkill.CurrentValue = 5.0f; // Default starting value
-        }
-        
-        NewSkill.Experience = 0.0f;
-        NewSkill.bIsLocked = false;
-        NewSkill.Modifier = 0.0f;
-        
-        Skills.Add(SkillType, NewSkill);
+        Skills.Add(SkillType, SkillData);
     }
     
-    UE_LOG(LogTemp, Log, TEXT("Skills initialized from data table with %d skills"), Skills.Num());
+    UpdateTotalSkillPoints();
+    
+    UE_LOG(LogTemp, Log, TEXT("%s initialized %d skills"), 
+           OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"), 
+           Skills.Num());
 }
 
 void USkillsComponent::GainSkillExperience(ESkillType SkillType, float ExperienceAmount)
 {
-    if (ExperienceAmount <= 0.0f)
-        return;
-        
-    FSkillData* SkillData = Skills.Find(SkillType);
+    FLegacySkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData || SkillData->bIsLocked)
         return;
-        
-    // Apply global experience multiplier
+    
     float AdjustedExperience = ExperienceAmount * ExperienceGainMultiplier;
-    
-    // Apply skill-specific multiplier from data table
-    if (SkillDataTable)
-    {
-        FString SkillName = UEnum::GetValueAsString(SkillType);
-        FName RowName = FName(*SkillName);
-        FSkillTableRow* SkillRow = SkillDataTable->FindRow<FSkillTableRow>(RowName, TEXT(""));
-        
-        if (SkillRow)
-        {
-            AdjustedExperience *= SkillRow->ExperienceMultiplier;
-        }
-    }
-    
-    // Add experience
     SkillData->Experience += AdjustedExperience;
+    SkillData->TotalExperience += AdjustedExperience; // Sync legacy field
     
-    // Check for skill level up
-    TryLevelUpSkill(SkillType);
+    float OldValue = SkillData->CurrentValue;
+    CalculateLevelFromExperience(*SkillData);
     
-    // Update total and handle skill cap
-    UpdateTotalSkillPoints();
-    
-    BroadcastSkillChanged(SkillType);
-    
-    UE_LOG(LogTemp, Verbose, TEXT("%s gained %f experience in %s (Total: %f)"), 
-           OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
-           AdjustedExperience, *UEnum::GetValueAsString(SkillType), SkillData->Experience);
-}
-
-void USkillsComponent::TryLevelUpSkill(ESkillType SkillType)
-{
-    FSkillData* SkillData = Skills.Find(SkillType);
-    if (!SkillData)
-        return;
-        
-    float RequiredExperience = CalculateExperienceForLevel(SkillData->CurrentValue + 1.0f);
-    
-    while (SkillData->Experience >= RequiredExperience && SkillData->CurrentValue < IndividualSkillCap)
+    if (SkillData->CurrentValue != OldValue)
     {
-        SkillData->CurrentValue += 1.0f;
+        UpdateTotalSkillPoints();
         
-        // Broadcast level up
+        // Handle skill cap if needed
+        if (bEnforceSkillCaps)
+        {
+            HandleSkillCap();
+        }
+        
+        // Broadcast skill level up
         OnSkillLevelUp.Broadcast(SkillType, SkillData->CurrentValue);
-        OnSkillLevelUpBP(SkillType, SkillData->CurrentValue);
         
-        UE_LOG(LogTemp, Log, TEXT("%s leveled up %s to %.1f"), 
+        UE_LOG(LogTemp, Log, TEXT("%s skill %s leveled up to %.1f"), 
                OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
                *UEnum::GetValueAsString(SkillType), SkillData->CurrentValue);
+    }
+    
+    // Always broadcast skill changed with experience
+    BroadcastSkillChanged(SkillType);
+}
+
+void USkillsComponent::CalculateLevelFromExperience(FLegacySkillData& SkillData)
+{
+    float RequiredExperience = CalculateExperienceForLevel(SkillData.CurrentValue + 1.0f);
+    
+    // Level up while we have enough experience and haven't hit the cap
+    while (SkillData.Experience >= RequiredExperience && SkillData.CurrentValue < SkillData.MaxValue)
+    {
+        SkillData.CurrentValue += 1.0f;
+        
+        UE_LOG(LogTemp, Verbose, TEXT("%s skill leveled up to %.1f"), 
+               OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
+               SkillData.CurrentValue);
         
         // Check if we need to calculate next level requirement
-        if (SkillData->CurrentValue < IndividualSkillCap)
+        if (SkillData.CurrentValue < SkillData.MaxValue)
         {
-            RequiredExperience = CalculateExperienceForLevel(SkillData->CurrentValue + 1.0f);
+            RequiredExperience = CalculateExperienceForLevel(SkillData.CurrentValue + 1.0f);
         }
         else
         {
@@ -199,24 +157,74 @@ float USkillsComponent::CalculateExperienceForLevel(float Level) const
     return BaseExperience * FMath::Pow(Level, 1.5f);
 }
 
-float USkillsComponent::CalculateLevelFromExperience(float Experience) const
+void USkillsComponent::HandleSkillCap()
 {
-    // Reverse of the experience formula
-    float BaseExperience = 100.0f;
-    return FMath::Pow(Experience / BaseExperience, 1.0f / 1.5f);
+    if (CurrentTotalSkillPoints <= TotalSkillCap)
+        return;
+        
+    // Fixed: Add the required parameter (CurrentTotalSkillPoints)
+    OnSkillCapReached.Broadcast(CurrentTotalSkillPoints);
+    
+    // Find the lowest skill that isn't locked and decay it
+    float LowestSkillValue = 100.0f;
+    ESkillType LowestSkillType = ESkillType::OneHanded;
+    
+    for (const auto& SkillPair : Skills)
+    {
+        if (!SkillPair.Value.bIsLocked && SkillPair.Value.CurrentValue < LowestSkillValue)
+        {
+            LowestSkillValue = SkillPair.Value.CurrentValue;
+            LowestSkillType = SkillPair.Key;
+        }
+    }
+    
+    // Decay the lowest skill
+    FLegacySkillData* LowestSkill = Skills.Find(LowestSkillType);
+    if (LowestSkill && LowestSkill->CurrentValue > 0.0f)
+    {
+        LowestSkill->CurrentValue = FMath::Max(0.0f, LowestSkill->CurrentValue - 0.1f);
+        LowestSkill->Experience = CalculateExperienceForLevel(LowestSkill->CurrentValue);
+        LowestSkill->TotalExperience = LowestSkill->Experience; // Sync legacy field
+        
+        UE_LOG(LogTemp, Log, TEXT("%s skill %s decayed to %.1f due to skill cap"), 
+               OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
+               *UEnum::GetValueAsString(LowestSkillType), LowestSkill->CurrentValue);
+               
+        BroadcastSkillChanged(LowestSkillType);
+    }
+}
+
+void USkillsComponent::UpdateTotalSkillPoints()
+{
+    CurrentTotalSkillPoints = 0.0f;
+    
+    for (const auto& SkillPair : Skills)
+    {
+        CurrentTotalSkillPoints += SkillPair.Value.CurrentValue;
+    }
+}
+
+void USkillsComponent::BroadcastSkillChanged(ESkillType SkillType)
+{
+    if (const FLegacySkillData* SkillData = Skills.Find(SkillType))
+    {
+        // Fixed: Add the required third parameter (Experience)
+        OnSkillChanged.Broadcast(SkillType, SkillData->CurrentValue, SkillData->Experience);
+    }
 }
 
 void USkillsComponent::SetSkillValue(ESkillType SkillType, float NewValue)
 {
-    FSkillData* SkillData = Skills.Find(SkillType);
+    FLegacySkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData)
         return;
         
-    NewValue = FMath::Clamp(NewValue, 0.0f, IndividualSkillCap);
+    NewValue = FMath::Clamp(NewValue, 0.0f, SkillData->MaxValue);
     SkillData->CurrentValue = NewValue;
     
     // Update experience to match the new level
     SkillData->Experience = CalculateExperienceForLevel(NewValue);
+    SkillData->TotalExperience = SkillData->Experience; // Sync legacy field
     
     UpdateTotalSkillPoints();
     BroadcastSkillChanged(SkillType);
@@ -224,27 +232,29 @@ void USkillsComponent::SetSkillValue(ESkillType SkillType, float NewValue)
 
 void USkillsComponent::AddSkillModifier(ESkillType SkillType, float ModifierAmount)
 {
-    FSkillData* SkillData = Skills.Find(SkillType);
+    FLegacySkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData)
         return;
         
-    SkillData->Modifier += ModifierAmount;
+    SkillData->TemporaryModifier += ModifierAmount;
+    SkillData->Modifier += ModifierAmount; // Legacy field
     BroadcastSkillChanged(SkillType);
 }
 
 void USkillsComponent::RemoveSkillModifier(ESkillType SkillType, float ModifierAmount)
 {
-    FSkillData* SkillData = Skills.Find(SkillType);
+    FLegacySkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData)
         return;
         
-    SkillData->Modifier -= ModifierAmount;
+    SkillData->TemporaryModifier -= ModifierAmount;
+    SkillData->Modifier -= ModifierAmount; // Legacy field
     BroadcastSkillChanged(SkillType);
 }
 
 void USkillsComponent::LockSkill(ESkillType SkillType, bool bLocked)
 {
-    FSkillData* SkillData = Skills.Find(SkillType);
+    FLegacySkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData)
         return;
         
@@ -258,35 +268,127 @@ void USkillsComponent::LockSkill(ESkillType SkillType, bool bLocked)
 
 float USkillsComponent::GetSkillValue(ESkillType SkillType) const
 {
-    const FSkillData* SkillData = Skills.Find(SkillType);
+    const FLegacySkillData* SkillData = Skills.Find(SkillType);
     return SkillData ? SkillData->CurrentValue : 0.0f;
 }
 
 float USkillsComponent::GetEffectiveSkillValue(ESkillType SkillType) const
 {
-    const FSkillData* SkillData = Skills.Find(SkillType);
-    if (!SkillData)
-        return 0.0f;
-        
-    float EffectiveValue = SkillData->CurrentValue + SkillData->Modifier;
-    return FMath::Clamp(EffectiveValue, 0.0f, IndividualSkillCap);
+    const FLegacySkillData* SkillData = Skills.Find(SkillType);
+    return SkillData ? SkillData->CurrentValue + SkillData->TemporaryModifier : 0.0f;
 }
 
 float USkillsComponent::GetSkillExperience(ESkillType SkillType) const
 {
-    const FSkillData* SkillData = Skills.Find(SkillType);
+    const FLegacySkillData* SkillData = Skills.Find(SkillType);
     return SkillData ? SkillData->Experience : 0.0f;
+}
+
+float USkillsComponent::GetSkillProgress(ESkillType SkillType) const
+{
+    const FLegacySkillData* SkillData = Skills.Find(SkillType);
+    if (!SkillData || SkillData->CurrentValue >= SkillData->MaxValue)
+        return 1.0f;
+    
+    float CurrentLevelExp = CalculateExperienceForLevel(SkillData->CurrentValue);
+    float NextLevelExp = CalculateExperienceForLevel(SkillData->CurrentValue + 1.0f);
+    
+    return FMath::Clamp((SkillData->Experience - CurrentLevelExp) / (NextLevelExp - CurrentLevelExp), 0.0f, 1.0f);
 }
 
 bool USkillsComponent::IsSkillLocked(ESkillType SkillType) const
 {
-    const FSkillData* SkillData = Skills.Find(SkillType);
+    const FLegacySkillData* SkillData = Skills.Find(SkillType);
     return SkillData ? SkillData->bIsLocked : false;
 }
 
 float USkillsComponent::GetRemainingSkillPoints() const
 {
     return FMath::Max(0.0f, TotalSkillCap - CurrentTotalSkillPoints);
+}
+
+void USkillsComponent::ResetSkill(ESkillType SkillType)
+{
+    FLegacySkillData* SkillData = Skills.Find(SkillType);
+    if (!SkillData)
+        return;
+    
+    SkillData->CurrentValue = 5.0f; // Default starting value
+    SkillData->Experience = 0.0f;
+    SkillData->TotalExperience = 0.0f;
+    SkillData->TemporaryModifier = 0.0f;
+    SkillData->Modifier = 0.0f;
+    SkillData->bIsLocked = false;
+    
+    UpdateTotalSkillPoints();
+    BroadcastSkillChanged(SkillType);
+    
+    UE_LOG(LogTemp, Log, TEXT("%s skill %s has been reset"), 
+           OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
+           *UEnum::GetValueAsString(SkillType));
+}
+
+FGameplayTag USkillsComponent::SkillTypeToGameplayTag(ESkillType SkillType)
+{
+    // Convert legacy skill types to gameplay tags
+    switch (SkillType)
+    {
+        case ESkillType::OneHanded: return FGameplayTag::RequestGameplayTag(FName("Skill.Combat.OneHanded"));
+        case ESkillType::TwoHanded: return FGameplayTag::RequestGameplayTag(FName("Skill.Combat.TwoHanded"));
+        case ESkillType::Marksman: return FGameplayTag::RequestGameplayTag(FName("Skill.Combat.Marksman"));
+        case ESkillType::Block: return FGameplayTag::RequestGameplayTag(FName("Skill.Combat.Block"));
+        case ESkillType::Smithing: return FGameplayTag::RequestGameplayTag(FName("Skill.Crafting.Smithing"));
+        case ESkillType::HeavyArmor: return FGameplayTag::RequestGameplayTag(FName("Skill.Combat.HeavyArmor"));
+        case ESkillType::LightArmor: return FGameplayTag::RequestGameplayTag(FName("Skill.Combat.LightArmor"));
+        case ESkillType::Pickpocket: return FGameplayTag::RequestGameplayTag(FName("Skill.Stealth.Pickpocket"));
+        case ESkillType::Lockpicking: return FGameplayTag::RequestGameplayTag(FName("Skill.Stealth.Lockpicking"));
+        case ESkillType::Sneak: return FGameplayTag::RequestGameplayTag(FName("Skill.Stealth.Sneak"));
+        case ESkillType::Alchemy: return FGameplayTag::RequestGameplayTag(FName("Skill.Magic.Alchemy"));
+        case ESkillType::Speech: return FGameplayTag::RequestGameplayTag(FName("Skill.Social.Speech"));
+        case ESkillType::Alteration: return FGameplayTag::RequestGameplayTag(FName("Skill.Magic.Alteration"));
+        case ESkillType::Conjuration: return FGameplayTag::RequestGameplayTag(FName("Skill.Magic.Conjuration"));
+        case ESkillType::Destruction: return FGameplayTag::RequestGameplayTag(FName("Skill.Magic.Destruction"));
+        case ESkillType::Illusion: return FGameplayTag::RequestGameplayTag(FName("Skill.Magic.Illusion"));
+        case ESkillType::Restoration: return FGameplayTag::RequestGameplayTag(FName("Skill.Magic.Restoration"));
+        case ESkillType::Enchanting: return FGameplayTag::RequestGameplayTag(FName("Skill.Magic.Enchanting"));
+        default: return FGameplayTag();
+    }
+}
+
+ESkillType USkillsComponent::GameplayTagToSkillType(FGameplayTag SkillTag)
+{
+    // Convert gameplay tags back to legacy skill types
+    FString TagString = SkillTag.ToString();
+    
+    if (TagString.Contains("OneHanded")) return ESkillType::OneHanded;
+    if (TagString.Contains("TwoHanded")) return ESkillType::TwoHanded;
+    if (TagString.Contains("Marksman")) return ESkillType::Marksman;
+    if (TagString.Contains("Block")) return ESkillType::Block;
+    if (TagString.Contains("Smithing")) return ESkillType::Smithing;
+    if (TagString.Contains("HeavyArmor")) return ESkillType::HeavyArmor;
+    if (TagString.Contains("LightArmor")) return ESkillType::LightArmor;
+    if (TagString.Contains("Pickpocket")) return ESkillType::Pickpocket;
+    if (TagString.Contains("Lockpicking")) return ESkillType::Lockpicking;
+    if (TagString.Contains("Sneak")) return ESkillType::Sneak;
+    if (TagString.Contains("Alchemy")) return ESkillType::Alchemy;
+    if (TagString.Contains("Speech")) return ESkillType::Speech;
+    if (TagString.Contains("Alteration")) return ESkillType::Alteration;
+    if (TagString.Contains("Conjuration")) return ESkillType::Conjuration;
+    if (TagString.Contains("Destruction")) return ESkillType::Destruction;
+    if (TagString.Contains("Illusion")) return ESkillType::Illusion;
+    if (TagString.Contains("Restoration")) return ESkillType::Restoration;
+    if (TagString.Contains("Enchanting")) return ESkillType::Enchanting;
+    
+    return ESkillType::OneHanded; // Default fallback
+}
+
+void USkillsComponent::OnRep_Skills()
+{
+    UpdateTotalSkillPoints();
+    
+    UE_LOG(LogTemp, Verbose, TEXT("%s skills replicated (%d skills, %.1f total points)"), 
+           OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
+           Skills.Num(), CurrentTotalSkillPoints);
 }
 
 bool USkillsComponent::IsAtSkillCap() const
@@ -296,134 +398,139 @@ bool USkillsComponent::IsAtSkillCap() const
 
 TArray<ESkillType> USkillsComponent::GetHighestSkills(int32 Count) const
 {
-    TArray<TPair<ESkillType, float>> SkillPairs;
+    TArray<TPair<ESkillType, float>> SkillValuePairs;
     
+    // Create array of skill type/value pairs
     for (const auto& SkillPair : Skills)
     {
-        SkillPairs.Add(TPair<ESkillType, float>(SkillPair.Key, SkillPair.Value.CurrentValue));
+        SkillValuePairs.Add(TPair<ESkillType, float>(SkillPair.Key, SkillPair.Value.CurrentValue));
     }
     
-    // Sort by skill value (highest first)
-    SkillPairs.Sort([](const TPair<ESkillType, float>& A, const TPair<ESkillType, float>& B)
+    // Sort by skill value in descending order
+    SkillValuePairs.Sort([](const TPair<ESkillType, float>& A, const TPair<ESkillType, float>& B)
     {
         return A.Value > B.Value;
     });
     
-    TArray<ESkillType> Result;
-    for (int32 i = 0; i < FMath::Min(Count, SkillPairs.Num()); i++)
+    // Extract the top N skill types
+    TArray<ESkillType> HighestSkills;
+    for (int32 i = 0; i < FMath::Min(Count, SkillValuePairs.Num()); ++i)
     {
-        Result.Add(SkillPairs[i].Key);
+        HighestSkills.Add(SkillValuePairs[i].Key);
     }
     
-    return Result;
+    return HighestSkills;
+}
+
+FLegacySkillData USkillsComponent::GetSkillData(ESkillType SkillType) const
+{
+    const FLegacySkillData* SkillData = Skills.Find(SkillType);
+    if (SkillData)
+    {
+        return *SkillData;
+    }
+    
+    // Return default skill data if not found
+    FLegacySkillData DefaultSkillData;
+    DefaultSkillData.CurrentValue = 0.0f;
+    DefaultSkillData.MaxValue = 100.0f;
+    DefaultSkillData.Experience = 0.0f;
+    DefaultSkillData.TotalExperience = 0.0f;
+    DefaultSkillData.TemporaryModifier = 0.0f;
+    DefaultSkillData.Modifier = 0.0f;
+    DefaultSkillData.bIsLocked = false;
+    
+    return DefaultSkillData;
+}
+
+void USkillsComponent::InitializeSkillsFromDataTable()
+{
+    if (!SkillDataTable)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SkillsComponent: No skill data table assigned, using default initialization"));
+        InitializeDefaultSkills();
+        return;
+    }
+    
+    // Clear existing skills
+    Skills.Empty();
+    
+    // Get all rows from the data table
+    TArray<FName> RowNames = SkillDataTable->GetRowNames();
+    
+    for (const FName& RowName : RowNames)
+    {
+        // Try to find the row data
+        FString ContextString = FString::Printf(TEXT("Loading skill data for %s"), *RowName.ToString());
+        FSkillTableRow* SkillRow = SkillDataTable->FindRow<FSkillTableRow>(RowName, ContextString);
+        
+        if (SkillRow)
+        {
+            // Convert the table row to our legacy skill data format
+            FLegacySkillData SkillData;
+            SkillData.CurrentValue = SkillRow->StartingValue;
+            SkillData.MaxValue = SkillRow->MaxValue;
+            SkillData.Experience = 0.0f;
+            SkillData.TotalExperience = 0.0f;
+            SkillData.TemporaryModifier = 0.0f;
+            SkillData.Modifier = 0.0f;
+            
+            // Handle the bStartsLocked property safely
+            if (SkillRow->bStartsLocked)
+            {
+                SkillData.bIsLocked = true;
+            }
+            else
+            {
+                SkillData.bIsLocked = false;
+            }
+            
+            // Add to skills map using the skill type from the table
+            Skills.Add(SkillRow->SkillType, SkillData);
+            
+            UE_LOG(LogTemp, Log, TEXT("Loaded skill %s from data table"), *UEnum::GetValueAsString(SkillRow->SkillType));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Failed to load skill data for row %s"), *RowName.ToString());
+        }
+    }
+    
+    // If no skills were loaded from table, fall back to default initialization
+    if (Skills.Num() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("No skills loaded from data table, falling back to default initialization"));
+        InitializeDefaultSkills();
+        return;
+    }
+    
+    UpdateTotalSkillPoints();
+    
+    UE_LOG(LogTemp, Log, TEXT("%s initialized %d skills from data table"), 
+           OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"), 
+           Skills.Num());
 }
 
 void USkillsComponent::ResetAllSkills()
 {
     for (auto& SkillPair : Skills)
     {
-        SkillPair.Value.CurrentValue = 5.0f;
-        SkillPair.Value.Experience = 0.0f;
-        SkillPair.Value.Modifier = 0.0f;
-        SkillPair.Value.bIsLocked = false;
+        FLegacySkillData& SkillData = SkillPair.Value;
+        
+        // Reset to default starting values
+        SkillData.CurrentValue = 5.0f; // Default starting value
+        SkillData.Experience = 0.0f;
+        SkillData.TotalExperience = 0.0f;
+        SkillData.TemporaryModifier = 0.0f;
+        SkillData.Modifier = 0.0f;
+        SkillData.bIsLocked = false;
+        
+        // Broadcast change for each skill
+        BroadcastSkillChanged(SkillPair.Key);
     }
     
     UpdateTotalSkillPoints();
     
-    UE_LOG(LogTemp, Log, TEXT("%s reset all skills"), 
+    UE_LOG(LogTemp, Log, TEXT("%s reset all skills to default values"), 
            OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"));
-}
-
-void USkillsComponent::ResetSkill(ESkillType SkillType)
-{
-    FSkillData* SkillData = Skills.Find(SkillType);
-    if (!SkillData)
-        return;
-        
-    SkillData->CurrentValue = 5.0f;
-    SkillData->Experience = 0.0f;
-    SkillData->Modifier = 0.0f;
-    SkillData->bIsLocked = false;
-    
-    UpdateTotalSkillPoints();
-    BroadcastSkillChanged(SkillType);
-}
-
-void USkillsComponent::UpdateTotalSkillPoints()
-{
-    float NewTotal = 0.0f;
-    
-    for (const auto& SkillPair : Skills)
-    {
-        NewTotal += SkillPair.Value.CurrentValue;
-    }
-    
-    CurrentTotalSkillPoints = NewTotal;
-    
-    // Check if we've exceeded the skill cap
-    if (IsAtSkillCap())
-    {
-        HandleSkillCapExceeded();
-    }
-}
-
-void USkillsComponent::HandleSkillCapExceeded()
-{
-    if (!bAllowSkillLoss || CurrentTotalSkillPoints <= TotalSkillCap)
-        return;
-        
-    float ExcessPoints = CurrentTotalSkillPoints - TotalSkillCap;
-    
-    // Find unlocked skills to reduce
-    TArray<ESkillType> UnlockedSkills;
-    for (const auto& SkillPair : Skills)
-    {
-        if (!SkillPair.Value.bIsLocked && SkillPair.Value.CurrentValue > 0.0f)
-        {
-            UnlockedSkills.Add(SkillPair.Key);
-        }
-    }
-    
-    // Randomly reduce skills until we're under the cap
-    while (ExcessPoints > 0.0f && UnlockedSkills.Num() > 0)
-    {
-        int32 RandomIndex = FMath::RandRange(0, UnlockedSkills.Num() - 1);
-        ESkillType SkillToReduce = UnlockedSkills[RandomIndex];
-        
-        FSkillData* SkillData = Skills.Find(SkillToReduce);
-        if (SkillData && SkillData->CurrentValue > 0.0f)
-        {
-            float ReductionAmount = FMath::Min(SkillLossRate, SkillData->CurrentValue);
-            SkillData->CurrentValue -= ReductionAmount;
-            SkillData->Experience = CalculateExperienceForLevel(SkillData->CurrentValue);
-            
-            ExcessPoints -= ReductionAmount;
-            CurrentTotalSkillPoints -= ReductionAmount;
-            
-            BroadcastSkillChanged(SkillToReduce);
-            
-            UE_LOG(LogTemp, Warning, TEXT("%s lost %.1f points in %s due to skill cap"), 
-                   OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
-                   ReductionAmount, *UEnum::GetValueAsString(SkillToReduce));
-        }
-        
-        // Remove skills that are at 0
-        if (SkillData->CurrentValue <= 0.0f)
-        {
-            UnlockedSkills.RemoveAt(RandomIndex);
-        }
-    }
-    
-    OnSkillCapReached.Broadcast(CurrentTotalSkillPoints);
-    OnSkillCapReachedBP(CurrentTotalSkillPoints);
-}
-
-void USkillsComponent::BroadcastSkillChanged(ESkillType SkillType)
-{
-    const FSkillData* SkillData = Skills.Find(SkillType);
-    if (!SkillData)
-        return;
-        
-    OnSkillChanged.Broadcast(SkillType, SkillData->CurrentValue, SkillData->Experience);
-    OnSkillChangedBP(SkillType, SkillData->CurrentValue, SkillData->Experience);
 }

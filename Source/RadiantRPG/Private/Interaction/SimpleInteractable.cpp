@@ -111,19 +111,14 @@ void ASimpleInteractable::BeginPlay()
         UE_LOG(LogTemp, Error, TEXT("SimpleInteractable '%s': MeshComponent is invalid in BeginPlay"), *GetName());
     }
 
-    // Initialize rarity colors with static safety check
-    static bool bRarityColorsInitialized = false;
-    if (!bRarityColorsInitialized)
-    {
-        InitializeRarityColors();
-        bRarityColorsInitialized = true;
-    }
+    // Initialize rarity colors for THIS INSTANCE (no static check)
+    InitializeRarityColors();
 
-    // Quick rarity determination
-    if (bUseRarityColors)
-    {
-        ItemRarity = DetermineRarityFromTags();
-    }
+    // REMOVED: Don't determine rarity from tags anymore, just use the dropdown value
+    // if (bUseRarityColors)
+    // {
+    //     ItemRarity = DetermineRarityFromTags();
+    // }
 
     // Store materials safely - only if we have a valid mesh and are in game world
     if (MeshComponent && IsValid(MeshComponent) && GetWorld() && GetWorld()->IsGameWorld())
@@ -135,7 +130,8 @@ void ASimpleInteractable::BeginPlay()
         }
     }
 
-    UE_LOG(LogTemp, Log, TEXT("SimpleInteractable '%s' initialized successfully"), *GetName());
+    UE_LOG(LogTemp, Log, TEXT("SimpleInteractable '%s' initialized with %d rarity colors, rarity: %s"), 
+           *GetName(), RarityColors.Num(), *UEnum::GetValueAsString(ItemRarity));
 }
 
 void ASimpleInteractable::SetupCollisionSafely()
@@ -346,16 +342,21 @@ void ASimpleInteractable::ApplyMinimalCollision()
 
 void ASimpleInteractable::InitializeRarityColors()
 {
-    if (RarityColors.Num() > 0)
-        return;
-    
-    RarityColors.Reserve(6);
-    RarityColors.Emplace(EItemRarity::Common, FLinearColor(0.6f, 0.6f, 0.6f, 1.0f), TEXT("Common"));
-    RarityColors.Emplace(EItemRarity::Uncommon, FLinearColor(0.2f, 1.0f, 0.2f, 1.0f), TEXT("Uncommon"));
-    RarityColors.Emplace(EItemRarity::Rare, FLinearColor(0.2f, 0.2f, 1.0f, 1.0f), TEXT("Rare"));
-    RarityColors.Emplace(EItemRarity::Epic, FLinearColor(0.8f, 0.2f, 1.0f, 1.0f), TEXT("Epic"));
-    RarityColors.Emplace(EItemRarity::Legendary, FLinearColor(1.0f, 0.5f, 0.0f, 1.0f), TEXT("Legendary"));
-    RarityColors.Emplace(EItemRarity::Unique, FLinearColor(1.0f, 0.8f, 0.0f, 1.0f), TEXT("Unique"));
+    // FIXED: Always initialize if array is empty, no static checks
+    if (RarityColors.Num() == 0)
+    {
+        UE_LOG(LogTemp, Log, TEXT("Initializing rarity colors for %s"), *GetName());
+        
+        RarityColors.Reserve(6);
+        RarityColors.Add(FRarityColorData(EItemRarity::Common, FLinearColor(0.6f, 0.6f, 0.6f, 1.0f), TEXT("Common")));
+        RarityColors.Add(FRarityColorData(EItemRarity::Uncommon, FLinearColor(0.2f, 1.0f, 0.2f, 1.0f), TEXT("Uncommon")));
+        RarityColors.Add(FRarityColorData(EItemRarity::Rare, FLinearColor(0.2f, 0.2f, 1.0f, 1.0f), TEXT("Rare")));
+        RarityColors.Add(FRarityColorData(EItemRarity::Epic, FLinearColor(0.8f, 0.2f, 1.0f, 1.0f), TEXT("Epic")));
+        RarityColors.Add(FRarityColorData(EItemRarity::Legendary, FLinearColor(1.0f, 0.5f, 0.0f, 1.0f), TEXT("Legendary")));
+        RarityColors.Add(FRarityColorData(EItemRarity::Unique, FLinearColor(1.0f, 0.8f, 0.0f, 1.0f), TEXT("Unique")));
+        
+        UE_LOG(LogTemp, Log, TEXT("Initialized %d rarity colors"), RarityColors.Num());
+    }
 }
 
 EItemRarity ASimpleInteractable::DetermineRarityFromTags() const
@@ -507,36 +508,59 @@ void ASimpleInteractable::SetItemRarity(EItemRarity NewRarity)
 
 FLinearColor ASimpleInteractable::GetRarityColor() const
 {
-    if (bUseRarityColors)
+    if (!bUseRarityColors)
     {
-        for (const FRarityColorData& RarityData : RarityColors)
+        return DefaultHighlightColor;
+    }
+
+    // Search for the matching rarity color
+    for (const FRarityColorData& RarityData : RarityColors)
+    {
+        if (RarityData.Rarity == ItemRarity)
         {
-            if (RarityData.Rarity == ItemRarity)
-            {
-                return RarityData.Color;
-            }
+            return RarityData.Color;
         }
     }
-    return DefaultHighlightColor;
+    
+    // Fallback: If no matching rarity found, return a default color based on rarity
+    switch (ItemRarity)
+    {
+    case EItemRarity::Common:
+        return FLinearColor(0.6f, 0.6f, 0.6f, 1.0f);
+    case EItemRarity::Uncommon:
+        return FLinearColor(0.2f, 1.0f, 0.2f, 1.0f);
+    case EItemRarity::Rare:
+        return FLinearColor(0.2f, 0.2f, 1.0f, 1.0f);
+    case EItemRarity::Epic:
+        return FLinearColor(0.8f, 0.2f, 1.0f, 1.0f);
+    case EItemRarity::Legendary:
+        return FLinearColor(1.0f, 0.5f, 0.0f, 1.0f);
+    case EItemRarity::Unique:
+        return FLinearColor(1.0f, 0.8f, 0.0f, 1.0f);
+    default:
+        return DefaultHighlightColor;
+    }
 }
+
 
 void ASimpleInteractable::ApplyHighlightMaterial()
 {
     // ULTRA SAFE material application for UE 5.6
     if (!MeshComponent || !IsValid(MeshComponent))
     {
-        UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: MeshComponent invalid"));
+        UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: MeshComponent invalid for %s"), *GetName());
         return;
     }
     
     if (!bUseHighlightMaterial)
     {
+        UE_LOG(LogTemp, Verbose, TEXT("ApplyHighlightMaterial: Highlight material disabled for %s"), *GetName());
         return;
     }
     
     if (!MeshComponent->GetStaticMesh() || !IsValid(MeshComponent->GetStaticMesh()))
     {
-        UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: No valid static mesh"));
+        UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: No valid static mesh for %s"), *GetName());
         return;
     }
 
@@ -555,9 +579,9 @@ void ASimpleInteractable::ApplyHighlightMaterial()
     UMaterialInterface* MaterialToApply = nullptr;
     
     // Handle dynamic material creation for rarity colors
-    if (bUseRarityColors)
+    if (bUseRarityColors && RarityColors.Num() > 0)
     {
-        if (!DynamicHighlightMaterial)
+        if (!DynamicHighlightMaterial || !IsValid(DynamicHighlightMaterial))
         {
             CreateDynamicHighlightMaterial();
         }
@@ -565,16 +589,31 @@ void ASimpleInteractable::ApplyHighlightMaterial()
         if (DynamicHighlightMaterial && IsValid(DynamicHighlightMaterial))
         {
             FLinearColor RarityColor = GetRarityColor();
-            DynamicHighlightMaterial->SetVectorParameterValue(ColorParameterName, RarityColor);
-            MaterialToApply = DynamicHighlightMaterial;
+            
+            // Extra safety: validate the color is reasonable
+            if (RarityColor.R >= 0.0f && RarityColor.G >= 0.0f && RarityColor.B >= 0.0f && RarityColor.A >= 0.0f)
+            {
+                DynamicHighlightMaterial->SetVectorParameterValue(ColorParameterName, RarityColor);
+                MaterialToApply = DynamicHighlightMaterial;
+                
+                UE_LOG(LogTemp, Verbose, TEXT("Applied rarity color for %s: R=%.2f G=%.2f B=%.2f"), 
+                       *UEnum::GetValueAsString(ItemRarity), RarityColor.R, RarityColor.G, RarityColor.B);
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("Invalid rarity color detected, using default material"));
+                MaterialToApply = HighlightMaterial;
+            }
         }
         else
         {
+            UE_LOG(LogTemp, Warning, TEXT("Failed to create dynamic material, using base highlight material"));
             MaterialToApply = HighlightMaterial;
         }
     }
     else
     {
+        // Use base highlight material if not using rarity colors
         MaterialToApply = HighlightMaterial;
     }
 
@@ -587,8 +626,7 @@ void ASimpleInteractable::ApplyHighlightMaterial()
     // Apply the overlay material with extreme safety for UE 5.6
     try
     {
-        if (MeshComponent && IsValid(MeshComponent) && 
-            !MeshComponent->HasAnyFlags(RF_BeginDestroyed))
+        if (MeshComponent && IsValid(MeshComponent) && !MeshComponent->HasAnyFlags(RF_BeginDestroyed))
         {
             MeshComponent->SetOverlayMaterial(MaterialToApply);
             MeshComponent->SetOverlayMaterialMaxDrawDistance(HighlightMaxDrawDistance);
@@ -731,4 +769,86 @@ UMaterialInstanceDynamic* ASimpleInteractable::GetSharedDynamicMaterial()
     
     UE_LOG(LogTemp, Error, TEXT("SimpleInteractable: Failed to create dynamic material instance"));
     return nullptr;
+}
+
+void ASimpleInteractable::RefreshRarityColors()
+{
+    RarityColors.Empty();
+    InitializeRarityColors();
+    
+    // Update current highlight if active
+    if (bIsHighlighted && bUseRarityColors)
+    {
+        UpdateHighlightColor();
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("Refreshed rarity colors for %s"), *GetName());
+}
+
+void ASimpleInteractable::PopulateDefaultRarityColors()
+{
+    // Clear existing colors
+    RarityColors.Empty();
+    
+    // Populate with default colors
+    RarityColors.Reserve(6);
+    RarityColors.Add(FRarityColorData(EItemRarity::Common, FLinearColor(0.6f, 0.6f, 0.6f, 1.0f), TEXT("Common")));
+    RarityColors.Add(FRarityColorData(EItemRarity::Uncommon, FLinearColor(0.2f, 1.0f, 0.2f, 1.0f), TEXT("Uncommon")));
+    RarityColors.Add(FRarityColorData(EItemRarity::Rare, FLinearColor(0.2f, 0.2f, 1.0f, 1.0f), TEXT("Rare")));
+    RarityColors.Add(FRarityColorData(EItemRarity::Epic, FLinearColor(0.8f, 0.2f, 1.0f, 1.0f), TEXT("Epic")));
+    RarityColors.Add(FRarityColorData(EItemRarity::Legendary, FLinearColor(1.0f, 0.5f, 0.0f, 1.0f), TEXT("Legendary")));
+    RarityColors.Add(FRarityColorData(EItemRarity::Unique, FLinearColor(1.0f, 0.8f, 0.0f, 1.0f), TEXT("Unique")));
+    
+    UE_LOG(LogTemp, Warning, TEXT("Populated %d default rarity colors for %s"), RarityColors.Num(), *GetName());
+    
+    // Log each color for verification
+    for (const FRarityColorData& ColorData : RarityColors)
+    {
+        FString RarityName = UEnum::GetValueAsString(ColorData.Rarity);
+        UE_LOG(LogTemp, Warning, TEXT("  %s: R=%.2f G=%.2f B=%.2f"), 
+               *RarityName, ColorData.Color.R, ColorData.Color.G, ColorData.Color.B);
+    }
+}
+
+void ASimpleInteractable::TestAllRarityColors()
+{
+    if (RarityColors.Num() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("No rarity colors defined. Populating defaults first."));
+        PopulateDefaultRarityColors();
+    }
+    
+    UE_LOG(LogTemp, Warning, TEXT("Testing all rarity colors for %s"), *GetName());
+    
+    // Test each rarity
+    TArray<EItemRarity> AllRarities = {
+        EItemRarity::Common,
+        EItemRarity::Uncommon,
+        EItemRarity::Rare,
+        EItemRarity::Epic,
+        EItemRarity::Legendary,
+        EItemRarity::Unique
+    };
+    
+    for (EItemRarity TestRarity : AllRarities)
+    {
+        SetItemRarity(TestRarity);
+        FLinearColor Color = GetRarityColor();
+        FString RarityName = UEnum::GetValueAsString(TestRarity);
+        
+        UE_LOG(LogTemp, Warning, TEXT("  %s: R=%.2f G=%.2f B=%.2f A=%.2f"), 
+               *RarityName, Color.R, Color.G, Color.B, Color.A);
+        
+        // Brief highlight test
+        SetHighlight(true);
+        
+        // Small delay between tests (in editor this will be immediate)
+        if (GEngine)
+        {
+            FString DisplayText = FString::Printf(TEXT("Testing %s"), *RarityName);
+            GEngine->AddOnScreenDebugMessage(-1, 2.0f, Color.ToFColor(true), DisplayText);
+        }
+    }
+    
+    UE_LOG(LogTemp, Warning, TEXT("Rarity color test complete"));
 }
