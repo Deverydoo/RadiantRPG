@@ -4,6 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CoreTypes.h"
 #include "GameplayTagContainer.h"
 #include "Engine/DataTable.h"
 #include "RadiantTypes.generated.h"
@@ -39,36 +40,7 @@ enum class EDifficultyLevel : uint8
     Nightmare       UMETA(DisplayName = "Nightmare")
 };
 
-/** Time of day categories for behavior and spawning */
-UENUM(BlueprintType)
-enum class ETimeOfDay : uint8
-{
-    Dawn            UMETA(DisplayName = "Dawn"),
-    Morning         UMETA(DisplayName = "Morning"),
-    Noon            UMETA(DisplayName = "Noon"),
-    Afternoon       UMETA(DisplayName = "Afternoon"),
-    Dusk            UMETA(DisplayName = "Dusk"),
-    Evening         UMETA(DisplayName = "Evening"),
-    Night           UMETA(DisplayName = "Night"),
-    Midnight        UMETA(DisplayName = "Midnight"),
-    Midday          UMETA(DisplayName = "Midday") 
-};
 
-/** Weather types for environmental simulation */
-UENUM(BlueprintType)
-enum class EWeatherType : uint8
-{
-    Clear           UMETA(DisplayName = "Clear"),
-    Cloudy          UMETA(DisplayName = "Cloudy"),
-    Overcast        UMETA(DisplayName = "Overcast"),
-    Fog             UMETA(DisplayName = "Fog"),
-    LightRain       UMETA(DisplayName = "Light Rain"),
-    HeavyRain       UMETA(DisplayName = "Heavy Rain"),
-    Thunderstorm    UMETA(DisplayName = "Thunderstorm"),
-    Snow            UMETA(DisplayName = "Snow"),
-    Blizzard        UMETA(DisplayName = "Blizzard"),
-    Sandstorm       UMETA(DisplayName = "Sandstorm")
-};
 
 /** Faction relationship types */
 UENUM(BlueprintType)
@@ -83,161 +55,10 @@ enum class EFactionRelationship : uint8
     Unknown          UMETA(DisplayName = "Unknown")
 };
 
-/** Skill categories for the Ultima Online-inspired skill system */
-UENUM(BlueprintType)
-enum class ESkillCategory : uint8
-{
-    Combat          UMETA(DisplayName = "Combat"),
-    Magic           UMETA(DisplayName = "Magic"),
-    Crafting        UMETA(DisplayName = "Crafting"),
-    Survival        UMETA(DisplayName = "Survival"),
-    Social          UMETA(DisplayName = "Social"),
-    Movement        UMETA(DisplayName = "Movement"),
-    Knowledge       UMETA(DisplayName = "Knowledge")
-};
 
-// ================================================================================
-// CORE DATA STRUCTURES
-// ================================================================================
 
-/** Skill data structure for character progression */
-USTRUCT(BlueprintType)
-struct RADIANTRPG_API FSkillData
-{
-    GENERATED_BODY()
 
-    /** Current skill level (0-100) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    float CurrentValue;
 
-    /** Maximum skill cap for this character */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    float MaxValue;
-
-    /** Total experience gained in this skill */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    float TotalExperience;
-
-    /** Whether this skill is currently locked */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    bool bIsLocked;
-
-    /** Temporary modifier from items/effects */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    float TemporaryModifier;
-
-    /** Skill category for grouping */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    ESkillCategory SkillCategory;
-    float CurrentExperience;
-
-    FSkillData()
-    {
-        CurrentValue = 0.0f;
-        MaxValue = 100.0f;
-        TotalExperience = 0.0f;
-        bIsLocked = false;
-        TemporaryModifier = 0.0f;
-        SkillCategory = ESkillCategory::Combat;
-    }
-
-    /** Get effective skill value including temporary modifiers */
-    float GetEffectiveValue() const
-    {
-        return FMath::Clamp(CurrentValue + TemporaryModifier, 0.0f, MaxValue);
-    }
-};
-
-/** World time data for synchronized time of day */
-USTRUCT(BlueprintType)
-struct RADIANTRPG_API FWorldTimeData
-{
-    GENERATED_BODY()
-
-    /** Game time in seconds since start */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
-    float GameTimeSeconds;
-
-    /** Current day number */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
-    int32 GameDay;
-
-    /** Current time of day category */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
-    ETimeOfDay TimeOfDay;
-
-    /** Time scale multiplier (1.0 = real time) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
-    float TimeScale;
-    int CurrentDay;
-    bool bTimePaused;
-
-    FWorldTimeData()
-    {
-        GameTimeSeconds = 0.0f;
-        GameDay = 1;
-        TimeOfDay = ETimeOfDay::Dawn;
-        TimeScale = 60.0f; // 60x speed by default
-    }
-
-    /** Get time as hours (0-24) */
-    float GetHours() const
-    {
-        const float SecondsInDay = 86400.0f / TimeScale;
-        float DayProgress = FMath::Fmod(GameTimeSeconds, SecondsInDay) / SecondsInDay;
-        return DayProgress * 24.0f;
-    }
-
-    /** Get time as minutes (0-59) */
-    float GetMinutes() const
-    {
-        float Hours = GetHours();
-        return FMath::Fmod(Hours * 60.0f, 60.0f);
-    }
-};
-
-/** Weather data for environmental systems */
-USTRUCT(BlueprintType)
-struct RADIANTRPG_API FWorldWeatherData
-{
-    GENERATED_BODY()
-
-    /** Current weather type */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather")
-    EWeatherType CurrentWeather;
-
-    /** Weather transition progress (0-1) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather")
-    float TransitionProgress;
-
-    /** Target weather we're transitioning to */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather")
-    EWeatherType TargetWeather;
-
-    /** Weather intensity (0-1) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather")
-    float Intensity;
-
-    /** Wind strength (0-1) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather")
-    float WindStrength;
-
-    /** Temperature in Celsius */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather")
-    float Temperature;
-    float WeatherIntensity;
-    float TimeToWeatherChange;
-
-    FWorldWeatherData()
-    {
-        CurrentWeather = EWeatherType::Clear;
-        TransitionProgress = 1.0f;
-        TargetWeather = EWeatherType::Clear;
-        Intensity = 0.5f;
-        WindStrength = 0.3f;
-        Temperature = 20.0f;
-    }
-};
 
 /** Faction relationship data */
 USTRUCT(BlueprintType)
@@ -416,7 +237,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGameSettingsChanged, const FGameS
 
 // World events
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorldTimeChanged, const FWorldTimeData&, NewTimeData);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorldWeatherChanged, const FWorldWeatherData&, NewWeatherData);
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorldEventStarted, const FWorldEventData&, EventData);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorldEventEnded, const FWorldEventData&, EventData);
 

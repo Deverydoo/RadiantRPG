@@ -3,6 +3,7 @@
 #include "Components/HealthComponent.h"
 #include "Characters/BaseCharacter.h"
 #include "Engine/World.h"
+#include "Types/CoreTypes.h"
 
 UHealthComponent::UHealthComponent()
 {

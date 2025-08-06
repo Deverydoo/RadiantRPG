@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Engine/DataTable.h"
+#include "Types/CoreTypes.h"
 #include "HealthComponent.generated.h"
 
 class ABaseCharacter;
@@ -12,72 +13,6 @@ class ABaseCharacter;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnHealthChanged, float, NewHealth, float, NewMaxHealth);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDeath, ABaseCharacter*, DeadCharacter);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnDamageTaken, float, DamageAmount, AActor*, DamageSource, const FVector&, HitLocation);
-
-UENUM(BlueprintType)
-enum class EDamageType : uint8
-{
-    Physical UMETA(DisplayName = "Physical"),
-    Fire UMETA(DisplayName = "Fire"),
-    Ice UMETA(DisplayName = "Ice"),
-    Lightning UMETA(DisplayName = "Lightning"),
-    Poison UMETA(DisplayName = "Poison"),
-    Holy UMETA(DisplayName = "Holy"),
-    Dark UMETA(DisplayName = "Dark"),
-    Psychic UMETA(DisplayName = "Psychic")
-};
-
-USTRUCT(BlueprintType)
-struct FDamageResistance
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resistance")
-    EDamageType DamageType;
-
-    // Percentage resistance (0.0 = no resistance, 1.0 = full immunity)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Resistance", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float ResistancePercent;
-
-    FDamageResistance()
-    {
-        DamageType = EDamageType::Physical;
-        ResistancePercent = 0.0f;
-    }
-};
-
-USTRUCT(BlueprintType)
-struct FDamageInfo
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
-    float Amount;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
-    EDamageType DamageType;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
-    AActor* DamageSource;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
-    FVector HitLocation;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
-    bool bCanBeBlocked;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
-    bool bIgnoreArmor;
-
-    FDamageInfo()
-    {
-        Amount = 0.0f;
-        DamageType = EDamageType::Physical;
-        DamageSource = nullptr;
-        HitLocation = FVector::ZeroVector;
-        bCanBeBlocked = true;
-        bIgnoreArmor = false;
-    }
-};
 
 /**
  * Component that manages character health, damage, death, and regeneration

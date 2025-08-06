@@ -9,6 +9,7 @@
 #include "GameplayTagContainer.h"
 #include "Engine/DataTable.h"
 #include "Types/RadiantTypes.h"
+#include "Types/SkillTypes.h"
 #include "RadiantPlayerState.generated.h"
 
 // Forward declarations

@@ -208,7 +208,7 @@ bool ARadiantGameState::IsDaytime() const
         case ETimeOfDay::Dawn:
         case ETimeOfDay::Morning:
         case ETimeOfDay::Midday:
-        case ETimeOfDay::Afternoon:
+        case ETimeOfDay::Noon:
             return true;
         default:
             return false;
@@ -279,9 +279,9 @@ ETimeOfDay ARadiantGameState::CalculateTimeOfDay(float GameTimeSeconds) const
     else if (TimeOfDayFloat < 0.5f)     // 9-12 hours (9am-noon)
         return ETimeOfDay::Morning;
     else if (TimeOfDayFloat < 0.625f)   // 12-15 hours (noon-3pm)
-        return ETimeOfDay::Midday;
+        return ETimeOfDay::Noon;
     else if (TimeOfDayFloat < 0.75f)    // 15-18 hours (3pm-6pm)
-        return ETimeOfDay::Afternoon;
+        return ETimeOfDay::Midday;
     else if (TimeOfDayFloat < 0.875f)   // 18-21 hours (6pm-9pm)
         return ETimeOfDay::Dusk;
     else                                // 21-24 hours (9pm-midnight)

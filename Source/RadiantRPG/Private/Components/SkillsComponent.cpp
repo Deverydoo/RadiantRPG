@@ -5,6 +5,7 @@
 #include "Types/RadiantTypes.h"
 #include "Engine/DataTable.h"
 #include "Net/UnrealNetwork.h"
+#include "Types/SkillTypes.h"
 
 USkillsComponent::USkillsComponent()
 {
@@ -70,7 +71,7 @@ void USkillsComponent::InitializeDefaultSkills()
     
     for (ESkillType SkillType : AllSkills)
     {
-        FLegacySkillData SkillData;
+        FSkillData SkillData;
         SkillData.CurrentValue = 5.0f;
         SkillData.MaxValue = 100.0f;
         SkillData.Experience = 0.0f;
@@ -91,7 +92,7 @@ void USkillsComponent::InitializeDefaultSkills()
 
 void USkillsComponent::GainSkillExperience(ESkillType SkillType, float ExperienceAmount)
 {
-    FLegacySkillData* SkillData = Skills.Find(SkillType);
+    FSkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData || SkillData->bIsLocked)
         return;
     
@@ -124,7 +125,7 @@ void USkillsComponent::GainSkillExperience(ESkillType SkillType, float Experienc
     BroadcastSkillChanged(SkillType);
 }
 
-void USkillsComponent::CalculateLevelFromExperience(FLegacySkillData& SkillData)
+void USkillsComponent::CalculateLevelFromExperience(FSkillData& SkillData)
 {
     float RequiredExperience = CalculateExperienceForLevel(SkillData.CurrentValue + 1.0f);
     
@@ -179,7 +180,7 @@ void USkillsComponent::HandleSkillCap()
     }
     
     // Decay the lowest skill
-    FLegacySkillData* LowestSkill = Skills.Find(LowestSkillType);
+    FSkillData* LowestSkill = Skills.Find(LowestSkillType);
     if (LowestSkill && LowestSkill->CurrentValue > 0.0f)
     {
         LowestSkill->CurrentValue = FMath::Max(0.0f, LowestSkill->CurrentValue - 0.1f);
@@ -206,7 +207,7 @@ void USkillsComponent::UpdateTotalSkillPoints()
 
 void USkillsComponent::BroadcastSkillChanged(ESkillType SkillType)
 {
-    if (const FLegacySkillData* SkillData = Skills.Find(SkillType))
+    if (const FSkillData* SkillData = Skills.Find(SkillType))
     {
         // Fixed: Add the required third parameter (Experience)
         OnSkillChanged.Broadcast(SkillType, SkillData->CurrentValue, SkillData->Experience);
@@ -215,7 +216,7 @@ void USkillsComponent::BroadcastSkillChanged(ESkillType SkillType)
 
 void USkillsComponent::SetSkillValue(ESkillType SkillType, float NewValue)
 {
-    FLegacySkillData* SkillData = Skills.Find(SkillType);
+    FSkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData)
         return;
         
@@ -232,7 +233,7 @@ void USkillsComponent::SetSkillValue(ESkillType SkillType, float NewValue)
 
 void USkillsComponent::AddSkillModifier(ESkillType SkillType, float ModifierAmount)
 {
-    FLegacySkillData* SkillData = Skills.Find(SkillType);
+    FSkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData)
         return;
         
@@ -243,7 +244,7 @@ void USkillsComponent::AddSkillModifier(ESkillType SkillType, float ModifierAmou
 
 void USkillsComponent::RemoveSkillModifier(ESkillType SkillType, float ModifierAmount)
 {
-    FLegacySkillData* SkillData = Skills.Find(SkillType);
+    FSkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData)
         return;
         
@@ -254,7 +255,7 @@ void USkillsComponent::RemoveSkillModifier(ESkillType SkillType, float ModifierA
 
 void USkillsComponent::LockSkill(ESkillType SkillType, bool bLocked)
 {
-    FLegacySkillData* SkillData = Skills.Find(SkillType);
+    FSkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData)
         return;
         
@@ -268,25 +269,25 @@ void USkillsComponent::LockSkill(ESkillType SkillType, bool bLocked)
 
 float USkillsComponent::GetSkillValue(ESkillType SkillType) const
 {
-    const FLegacySkillData* SkillData = Skills.Find(SkillType);
+    const FSkillData* SkillData = Skills.Find(SkillType);
     return SkillData ? SkillData->CurrentValue : 0.0f;
 }
 
 float USkillsComponent::GetEffectiveSkillValue(ESkillType SkillType) const
 {
-    const FLegacySkillData* SkillData = Skills.Find(SkillType);
+    const FSkillData* SkillData = Skills.Find(SkillType);
     return SkillData ? SkillData->CurrentValue + SkillData->TemporaryModifier : 0.0f;
 }
 
 float USkillsComponent::GetSkillExperience(ESkillType SkillType) const
 {
-    const FLegacySkillData* SkillData = Skills.Find(SkillType);
+    const FSkillData* SkillData = Skills.Find(SkillType);
     return SkillData ? SkillData->Experience : 0.0f;
 }
 
 float USkillsComponent::GetSkillProgress(ESkillType SkillType) const
 {
-    const FLegacySkillData* SkillData = Skills.Find(SkillType);
+    const FSkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData || SkillData->CurrentValue >= SkillData->MaxValue)
         return 1.0f;
     
@@ -298,7 +299,7 @@ float USkillsComponent::GetSkillProgress(ESkillType SkillType) const
 
 bool USkillsComponent::IsSkillLocked(ESkillType SkillType) const
 {
-    const FLegacySkillData* SkillData = Skills.Find(SkillType);
+    const FSkillData* SkillData = Skills.Find(SkillType);
     return SkillData ? SkillData->bIsLocked : false;
 }
 
@@ -309,7 +310,7 @@ float USkillsComponent::GetRemainingSkillPoints() const
 
 void USkillsComponent::ResetSkill(ESkillType SkillType)
 {
-    FLegacySkillData* SkillData = Skills.Find(SkillType);
+    FSkillData* SkillData = Skills.Find(SkillType);
     if (!SkillData)
         return;
     
@@ -422,16 +423,16 @@ TArray<ESkillType> USkillsComponent::GetHighestSkills(int32 Count) const
     return HighestSkills;
 }
 
-FLegacySkillData USkillsComponent::GetSkillData(ESkillType SkillType) const
+FSkillData USkillsComponent::GetSkillData(ESkillType SkillType) const
 {
-    const FLegacySkillData* SkillData = Skills.Find(SkillType);
+    const FSkillData* SkillData = Skills.Find(SkillType);
     if (SkillData)
     {
         return *SkillData;
     }
     
     // Return default skill data if not found
-    FLegacySkillData DefaultSkillData;
+    FSkillData DefaultSkillData;
     DefaultSkillData.CurrentValue = 0.0f;
     DefaultSkillData.MaxValue = 100.0f;
     DefaultSkillData.Experience = 0.0f;
@@ -467,7 +468,7 @@ void USkillsComponent::InitializeSkillsFromDataTable()
         if (SkillRow)
         {
             // Convert the table row to our legacy skill data format
-            FLegacySkillData SkillData;
+            FSkillData SkillData;
             SkillData.CurrentValue = SkillRow->StartingValue;
             SkillData.MaxValue = SkillRow->MaxValue;
             SkillData.Experience = 0.0f;
@@ -515,7 +516,7 @@ void USkillsComponent::ResetAllSkills()
 {
     for (auto& SkillPair : Skills)
     {
-        FLegacySkillData& SkillData = SkillPair.Value;
+        FSkillData& SkillData = SkillPair.Value;
         
         // Reset to default starting values
         SkillData.CurrentValue = 5.0f; // Default starting value

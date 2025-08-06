@@ -8,6 +8,7 @@
 #include "GameplayAbilitySet.h"
 #include "Engine/World.h"
 #include "Components/PrimitiveComponent.h"
+#include "Types/SkillTypes.h"
 
 ARadiantPlayerState::ARadiantPlayerState()
 {

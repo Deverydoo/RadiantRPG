@@ -414,3 +414,50 @@ void UStaminaComponent::BroadcastStaminaChanged()
     OnStaminaChanged.Broadcast(CurrentStamina, CurrentMaxStamina);
     OnStaminaChangedBP(CurrentStamina, CurrentMaxStamina);
 }
+
+bool UStaminaComponent::IsActivityActive(EStaminaActivity Activity) const
+{
+    for (const FStaminaCostInfo& ActivityInfo : ActiveContinuousActivities)
+    {
+        if (ActivityInfo.Activity == Activity)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+int32 UStaminaComponent::GetActiveActivityCount() const
+{
+    return ActiveContinuousActivities.Num();
+}
+
+TArray<EStaminaActivity> UStaminaComponent::GetActiveActivityTypes() const
+{
+    TArray<EStaminaActivity> ActivityTypes;
+    ActivityTypes.Reserve(ActiveContinuousActivities.Num());
+    
+    for (const FStaminaCostInfo& ActivityInfo : ActiveContinuousActivities)
+    {
+        ActivityTypes.Add(ActivityInfo.Activity);
+    }
+    
+    return ActivityTypes;
+}
+
+bool UStaminaComponent::HasActiveActivity(EStaminaActivity Activity) const
+{
+    return IsActivityActive(Activity);
+}
+
+float UStaminaComponent::GetActivityCurrentCost(EStaminaActivity Activity) const
+{
+    for (const FStaminaCostInfo& ActivityInfo : ActiveContinuousActivities)
+    {
+        if (ActivityInfo.Activity == Activity)
+        {
+            return CalculateActivityCost(ActivityInfo);
+        }
+    }
+    return 0.0f;
+}

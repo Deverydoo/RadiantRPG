@@ -545,10 +545,29 @@ FLinearColor ASimpleInteractable::GetRarityColor() const
 
 void ASimpleInteractable::ApplyHighlightMaterial()
 {
-    // ULTRA SAFE material application for UE 5.6
-    if (!MeshComponent || !IsValid(MeshComponent))
+    // CRITICAL: Add null checks for ALL potential crash points
+    if (!IsValid(this))
     {
-        UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: MeshComponent invalid for %s"), *GetName());
+        UE_LOG(LogTemp, Error, TEXT("ApplyHighlightMaterial: SimpleInteractable is invalid"));
+        return;
+    }
+
+    if (!MeshComponent)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: MeshComponent is null for %s"), *GetName());
+        return;
+    }
+
+    if (!IsValid(MeshComponent))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: MeshComponent is invalid for %s"), *GetName());
+        return;
+    }
+
+    // Check if component is being destroyed
+    if (MeshComponent->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: MeshComponent is being destroyed for %s"), *GetName());
         return;
     }
     
@@ -558,15 +577,26 @@ void ASimpleInteractable::ApplyHighlightMaterial()
         return;
     }
     
-    if (!MeshComponent->GetStaticMesh() || !IsValid(MeshComponent->GetStaticMesh()))
+    // Validate static mesh
+    UStaticMesh* StaticMesh = MeshComponent->GetStaticMesh();
+    if (!StaticMesh || !IsValid(StaticMesh))
     {
         UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: No valid static mesh for %s"), *GetName());
         return;
     }
 
+    // Validate highlight material
     if (!HighlightMaterial || !IsValid(HighlightMaterial))
     {
         UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: No valid highlight material for %s"), *GetName());
+        return;
+    }
+
+    // Additional safety: Check if the world is valid
+    UWorld* World = GetWorld();
+    if (!World || !IsValid(World))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: Invalid world for %s"), *GetName());
         return;
     }
 
@@ -581,6 +611,7 @@ void ASimpleInteractable::ApplyHighlightMaterial()
     // Handle dynamic material creation for rarity colors
     if (bUseRarityColors && RarityColors.Num() > 0)
     {
+        // Only create dynamic material if we don't have one or it's invalid
         if (!DynamicHighlightMaterial || !IsValid(DynamicHighlightMaterial))
         {
             CreateDynamicHighlightMaterial();
@@ -590,14 +621,23 @@ void ASimpleInteractable::ApplyHighlightMaterial()
         {
             FLinearColor RarityColor = GetRarityColor();
             
-            // Extra safety: validate the color is reasonable
+            // Validate the color values
             if (RarityColor.R >= 0.0f && RarityColor.G >= 0.0f && RarityColor.B >= 0.0f && RarityColor.A >= 0.0f)
             {
-                DynamicHighlightMaterial->SetVectorParameterValue(ColorParameterName, RarityColor);
-                MaterialToApply = DynamicHighlightMaterial;
-                
-                UE_LOG(LogTemp, Verbose, TEXT("Applied rarity color for %s: R=%.2f G=%.2f B=%.2f"), 
-                       *UEnum::GetValueAsString(ItemRarity), RarityColor.R, RarityColor.G, RarityColor.B);
+                // CRITICAL: Wrap material parameter setting in try-catch
+                try
+                {
+                    DynamicHighlightMaterial->SetVectorParameterValue(ColorParameterName, RarityColor);
+                    MaterialToApply = DynamicHighlightMaterial;
+                    
+                    UE_LOG(LogTemp, Verbose, TEXT("Applied rarity color for %s: R=%.2f G=%.2f B=%.2f"), 
+                           *UEnum::GetValueAsString(ItemRarity), RarityColor.R, RarityColor.G, RarityColor.B);
+                }
+                catch (...)
+                {
+                    UE_LOG(LogTemp, Error, TEXT("Exception setting material parameter for %s"), *GetName());
+                    MaterialToApply = HighlightMaterial; // Fallback to static material
+                }
             }
             else
             {
@@ -617,32 +657,62 @@ void ASimpleInteractable::ApplyHighlightMaterial()
         MaterialToApply = HighlightMaterial;
     }
 
+    // Final validation of material to apply
     if (!MaterialToApply || !IsValid(MaterialToApply))
     {
         UE_LOG(LogTemp, Warning, TEXT("ApplyHighlightMaterial: No valid material to apply for %s"), *GetName());
         return;
     }
 
-    // Apply the overlay material with extreme safety for UE 5.6
+    // Apply the overlay material with maximum safety
     try
     {
-        if (MeshComponent && IsValid(MeshComponent) && !MeshComponent->HasAnyFlags(RF_BeginDestroyed))
+        // Triple-check component validity before applying material
+        if (MeshComponent && 
+            IsValid(MeshComponent) && 
+            !MeshComponent->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed) &&
+            MeshComponent->GetStaticMesh() &&
+            IsValid(MeshComponent->GetStaticMesh()))
         {
-            MeshComponent->SetOverlayMaterial(MaterialToApply);
-            MeshComponent->SetOverlayMaterialMaxDrawDistance(HighlightMaxDrawDistance);
-            
-            UE_LOG(LogTemp, Verbose, TEXT("SimpleInteractable: Applied highlight material to %s"), *GetName());
+            // Use a delayed call to ensure component is fully initialized
+            if (World->HasBegunPlay())
+            {
+                MeshComponent->SetOverlayMaterial(MaterialToApply);
+                MeshComponent->SetOverlayMaterialMaxDrawDistance(HighlightMaxDrawDistance);
+                
+                UE_LOG(LogTemp, Verbose, TEXT("SimpleInteractable: Applied highlight material to %s"), *GetName());
+            }
+            else
+            {
+                // Defer material application until world has begun play
+                FTimerHandle DelayedApplyHandle;
+                World->GetTimerManager().SetTimer(DelayedApplyHandle, 
+                    [this, MaterialToApply]()
+                    {
+                        if (IsValid(this) && IsValid(MeshComponent) && IsValid(MaterialToApply))
+                        {
+                            MeshComponent->SetOverlayMaterial(MaterialToApply);
+                            MeshComponent->SetOverlayMaterialMaxDrawDistance(HighlightMaxDrawDistance);
+                        }
+                    }, 
+                    0.1f, false);
+            }
         }
         else
         {
             UE_LOG(LogTemp, Warning, TEXT("SimpleInteractable: MeshComponent not safe for material application"));
         }
     }
+    catch (const std::exception&)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SimpleInteractable: Standard exception applying highlight material to %s"), *GetName());
+    }
     catch (...)
     {
-        UE_LOG(LogTemp, Error, TEXT("SimpleInteractable: Exception applying highlight material to %s"), *GetName());
+        UE_LOG(LogTemp, Error, TEXT("SimpleInteractable: Unknown exception applying highlight material to %s"), *GetName());
     }
 }
+
 
 void ASimpleInteractable::RemoveHighlightMaterial()
 {
@@ -724,17 +794,40 @@ void ASimpleInteractable::UpdateHighlightColor()
 
 void ASimpleInteractable::CreateDynamicHighlightMaterial()
 {
-    if (!HighlightMaterial)
+    if (!HighlightMaterial || !IsValid(HighlightMaterial))
     {
         UE_LOG(LogTemp, Warning, TEXT("SimpleInteractable: Cannot create dynamic material - no base highlight material"));
         return;
     }
 
-    DynamicHighlightMaterial = GetSharedDynamicMaterial();
-    
-    if (!DynamicHighlightMaterial)
+    // Clear any existing dynamic material first
+    DynamicHighlightMaterial = nullptr;
+
+    try
     {
-        UE_LOG(LogTemp, Warning, TEXT("SimpleInteractable: Failed to create dynamic highlight material for %s"), *GetName());
+        UWorld* World = GetWorld();
+        if (World && IsValid(World))
+        {
+            DynamicHighlightMaterial = UMaterialInstanceDynamic::Create(HighlightMaterial, this);
+            
+            if (!DynamicHighlightMaterial || !IsValid(DynamicHighlightMaterial))
+            {
+                UE_LOG(LogTemp, Warning, TEXT("SimpleInteractable: Failed to create dynamic highlight material for %s"), *GetName());
+            }
+            else
+            {
+                UE_LOG(LogTemp, Verbose, TEXT("SimpleInteractable: Created dynamic highlight material for %s"), *GetName());
+            }
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("SimpleInteractable: Invalid world, cannot create dynamic material"));
+        }
+    }
+    catch (...)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SimpleInteractable: Exception creating dynamic material for %s"), *GetName());
+        DynamicHighlightMaterial = nullptr;
     }
 }
 

@@ -6,60 +6,11 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Engine/DataTable.h"
+#include "Types/RadiantAITypes.h"
 #include "NeedsComponent.generated.h"
 
 class ABaseCharacter;
 
-UENUM(BlueprintType)
-enum class ENeedType : uint8
-{
-    Hunger UMETA(DisplayName = "Hunger"),
-    Thirst UMETA(DisplayName = "Thirst"),
-    Sleep UMETA(DisplayName = "Sleep"),
-    Comfort UMETA(DisplayName = "Comfort"),
-    Social UMETA(DisplayName = "Social"),
-    Safety UMETA(DisplayName = "Safety"),
-    Cleanliness UMETA(DisplayName = "Cleanliness")
-};
-
-USTRUCT(BlueprintType)
-struct FNeedData
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need")
-    ENeedType NeedType;
-
-    /** Current need level (0.0 = desperate, 1.0 = fully satisfied) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float CurrentLevel;
-
-    /** Rate at which this need decays per second */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need", meta = (ClampMin = "0.0"))
-    float DecayRate;
-
-    /** Threshold below which this need becomes critical */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float CriticalThreshold;
-
-    /** Whether this need is currently critical */
-    UPROPERTY(BlueprintReadOnly, Category = "Need")
-    bool bIsCritical;
-
-    /** Whether this need affects character behavior */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need")
-    bool bIsActive;
-
-    FNeedData()
-    {
-        NeedType = ENeedType::Hunger;
-        CurrentLevel = 1.0f;
-        DecayRate = 0.001f; // Very slow decay by default
-        CriticalThreshold = 0.2f;
-        bIsCritical = false;
-        bIsActive = true;
-    }
-};
 
 // Need-related events
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNeedChanged, ENeedType, NeedType, float, NewLevel);

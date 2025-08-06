@@ -152,6 +152,24 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Events")
     FOnExhaustionStateChanged OnExhaustionStateChanged;
 
+    UFUNCTION(BlueprintPure, Category = "Activities")
+    bool IsActivityActive(EStaminaActivity Activity) const;
+
+    UFUNCTION(BlueprintPure, Category = "Activities")
+    int32 GetActiveActivityCount() const;
+
+    UFUNCTION(BlueprintPure, Category = "Activities")
+    TArray<EStaminaActivity> GetActiveActivityTypes() const;
+
+    UFUNCTION(BlueprintPure, Category = "Activities")
+    const TArray<FStaminaCostInfo>& GetActiveContinuousActivities() const { return ActiveContinuousActivities; }
+
+    UFUNCTION(BlueprintPure, Category = "Activities")
+    bool HasActiveActivity(EStaminaActivity Activity) const;
+
+    UFUNCTION(BlueprintPure, Category = "Activities")
+    float GetActivityCurrentCost(EStaminaActivity Activity) const;
+
     // Public functions
     UFUNCTION(BlueprintCallable, Category = "Stamina")
     bool TrySpendStamina(const FStaminaCostInfo& ActivityInfo);

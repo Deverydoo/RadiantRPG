@@ -8,118 +8,13 @@
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
 #include "Types/RadiantTypes.h"
+#include "Types/SkillTypes.h"
 #include "SkillsComponent.generated.h"
 
+enum class ESkillType : uint8;
 class ABaseCharacter;
 
-/** Legacy skill type enum for backward compatibility */
-UENUM(BlueprintType)
-enum class ESkillType : uint8
-{
-    // Combat Skills
-    OneHanded UMETA(DisplayName = "One-Handed"),
-    TwoHanded UMETA(DisplayName = "Two-Handed"),
-    Archery UMETA(DisplayName = "Archery"),
-    Marksman UMETA(DisplayName = "Marksman"),
-    Block UMETA(DisplayName = "Block"),
-    HeavyArmor UMETA(DisplayName = "Heavy Armor"),
-    LightArmor UMETA(DisplayName = "Light Armor"),
-    
-    // Magic Skills
-    Destruction UMETA(DisplayName = "Destruction"),
-    Restoration UMETA(DisplayName = "Restoration"),
-    Illusion UMETA(DisplayName = "Illusion"),
-    Conjuration UMETA(DisplayName = "Conjuration"),
-    Enchanting UMETA(DisplayName = "Enchanting"),
-    Alchemy UMETA(DisplayName = "Alchemy"),
-    
-    // Stealth Skills
-    Sneak UMETA(DisplayName = "Sneak"),
-    Lockpicking UMETA(DisplayName = "Lockpicking"),
-    Pickpocket UMETA(DisplayName = "Pickpocket"),
-    
-    // Crafting Skills
-    Smithing UMETA(DisplayName = "Smithing"),
-    Tailoring UMETA(DisplayName = "Tailoring"),
-    Cooking UMETA(DisplayName = "Cooking"),
-    
-    // Utility Skills
-    Athletics UMETA(DisplayName = "Athletics"),
-    Acrobatics UMETA(DisplayName = "Acrobatics"),
-    Speechcraft UMETA(DisplayName = "Speechcraft"),
-    Mercantile UMETA(DisplayName = "Mercantile"),
-    Speech UMETA(DisplayName = "Speech"),
-    Alteration UMETA(DisplayName = "Alteration"),
-    
-    // Knowledge Skills
-    Lore UMETA(DisplayName = "Lore"),
-    Survival UMETA(DisplayName = "Survival")
-};
 
-/** Legacy skill data structure extending the base FSkillData */
-USTRUCT(BlueprintType)
-struct FLegacySkillData : public FSkillData
-{
-    GENERATED_BODY()
-
-    /** Legacy skill type for backward compatibility */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    ESkillType SkillType;
-
-    /** Legacy experience field */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill", meta = (ClampMin = "0.0"))
-    float Experience;
-
-    /** Legacy modifier field */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    float Modifier;
-
-    FLegacySkillData() : FSkillData()
-    {
-        SkillType = ESkillType::OneHanded;
-        Experience = 0.0f;
-        Modifier = 0.0f;
-    }
-};
-
-/** Skill configuration data table row */
-USTRUCT(BlueprintType, meta = (BlueprintType = true))
-struct FSkillTableRow : public FTableRowBase
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    FText SkillName;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    FText Description;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    float ExperienceMultiplier;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    float StartingValue;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    float MaxValue;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    ESkillCategory Category;
-    float MaxSkillCap;
-    bool bStartsLocked;
-    ESkillCategory SkillCategory;
-    ESkillType SkillType;
-
-    FSkillTableRow()
-    {
-        SkillName = FText::FromString("Unknown Skill");
-        Description = FText::GetEmpty();
-        ExperienceMultiplier = 1.0f;
-        StartingValue = 5.0f;
-        MaxValue = 100.0f;
-        Category = ESkillCategory::Combat;
-    }
-};
 
 // Legacy skill events for backward compatibility
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLegacySkillChanged, ESkillType, SkillType, float, NewValue, float, Experience);
@@ -153,7 +48,7 @@ protected:
     
     /** Legacy skill data map */
     UPROPERTY(BlueprintReadOnly, Category = "Skills")
-    TMap<ESkillType, FLegacySkillData> Skills;
+    TMap<ESkillType, FSkillData> Skills;
 
     // === CONFIGURATION ===
     
@@ -200,7 +95,7 @@ public:
     /** Gain experience in a skill */
     UFUNCTION(BlueprintCallable, Category = "Skills")
     void GainSkillExperience(ESkillType SkillType, float ExperienceAmount);
-    void CalculateLevelFromExperience(FLegacySkillData& SkillData);
+    void CalculateLevelFromExperience(FSkillData& SkillData);
 
     /** Set skill value directly */
     UFUNCTION(BlueprintCallable, Category = "Skills")
@@ -255,7 +150,7 @@ public:
 
     /** Get skill data structure */
     UFUNCTION(BlueprintPure, Category = "Skills")
-    FLegacySkillData GetSkillData(ESkillType SkillType) const;
+    FSkillData GetSkillData(ESkillType SkillType) const;
 
     // === SKILL MANAGEMENT ===
     

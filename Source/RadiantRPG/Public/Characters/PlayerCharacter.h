@@ -252,6 +252,37 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Settings")
     void SetInvertMouseY(bool bInvert);
 
+    UFUNCTION(BlueprintCallable, Category = "Input")
+    void HandleMoveInput(const FInputActionValue& Value);
+
+    /** Handle look input from controller (with sensitivity already applied) */
+    UFUNCTION(BlueprintCallable, Category = "Input")
+    void HandleLookInput(const FVector2D& LookInput);
+
+    /** Try to interact with current target (alternative name for existing function) */
+    UFUNCTION(BlueprintCallable, Category = "Input")
+    void TryInteract();
+
+    /** Handle zoom input from mouse wheel */
+    UFUNCTION(BlueprintCallable, Category = "Input")
+    void HandleZoomInput(const FInputActionValue& Value);
+
+    /** Start sprinting (wrapper for existing StartSprint) */
+    UFUNCTION(BlueprintCallable, Category = "Movement")
+    void StartSprinting();
+
+    /** Stop sprinting (wrapper for existing StopSprint) */
+    UFUNCTION(BlueprintCallable, Category = "Movement")
+    void StopSprinting();
+
+    /** Check if character can currently sprint */
+    UFUNCTION(BlueprintPure, Category = "Movement")
+    bool CanSprint() const;
+
+    /** Check if character is currently sprinting */
+    UFUNCTION(BlueprintPure, Category = "Movement")
+    bool IsSprinting() const;
+
 protected:
     // === MOVEMENT PROCESSING ===
     
@@ -263,6 +294,7 @@ protected:
 
     /** Update sprint state based on stamina */
     void UpdateSprintState();
+    void LogActiveStaminaActivities() const;
 
     // === CAMERA MANAGEMENT ===
     
@@ -296,6 +328,8 @@ protected:
     
     /** Initialize player-specific components */
     virtual void InitializePlayerComponents();
+
+    
 
 private:
     // === CACHED VALUES FOR PERFORMANCE ===

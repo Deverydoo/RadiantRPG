@@ -1,5 +1,5 @@
 // Private/Characters/PlayerCharacter.cpp
-// Updated player character implementation with improved camera positioning and interaction tracing
+// Corrected player character implementation using existing component functions
 
 #include "Characters/PlayerCharacter.h"
 #include "Camera/CameraComponent.h"
@@ -86,6 +86,12 @@ APlayerCharacter::APlayerCharacter()
     BaseInteractionDistance = 300.0f; // Increased base distance
     InteractionSphereRadius = 15.0f;
     InteractionChannel = ECC_GameTraceChannel1; // Custom Interaction channel
+
+    // Debug settings
+    bShowInteractionDebug = false;
+
+    // Movement state
+    bIsSprinting = false;
 
     // Performance optimization
     LastControlRotationUpdate = 0.0f;
@@ -222,7 +228,7 @@ void APlayerCharacter::UpdateInteractionDetection()
 
     // Debug visualization (only in development builds)
     #if WITH_EDITOR
-    if (CVarDebugInteraction && CVarDebugInteraction->GetInt() > 0)
+    if (bShowInteractionDebug)
     {
         FColor DebugColor = bHit ? FColor::Green : FColor::Red;
         DrawDebugLine(GetWorld(), TraceStart, TraceEnd, DebugColor, false, 0.1f, 0, 2.0f);
@@ -325,8 +331,8 @@ FVector APlayerCharacter::GetInteractionTraceDirection() const
 
 void APlayerCharacter::ProcessInteractionHit(bool bHit, const FHitResult& HitResult)
 {
+    AActor* PreviousInteractable = CurrentInteractable;
     AActor* NewInteractable = nullptr;
-    bool bCanInteract = false;
 
     if (bHit && HitResult.GetActor())
     {
@@ -334,36 +340,39 @@ void APlayerCharacter::ProcessInteractionHit(bool bHit, const FHitResult& HitRes
         if (IsActorInteractable(HitActor))
         {
             NewInteractable = HitActor;
-            bCanInteract = true;
+            CurrentInteractionPoint = HitResult.Location;
+            CurrentInteractionNormal = HitResult.Normal;
         }
     }
 
-    // Update current interactable if changed
-    if (CurrentInteractable != NewInteractable)
+    // Handle interactable changes with proper focus management
+    if (PreviousInteractable != NewInteractable)
     {
-        // Clear previous interactable
-        if (CurrentInteractable && IsValid(CurrentInteractable))
+        // Remove focus from previous interactable
+        if (PreviousInteractable && IsValid(PreviousInteractable))
         {
-            if (CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
+            if (PreviousInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
             {
-                IInteractableInterface::Execute_EndFocus(CurrentInteractable, this);
+                // CORRECTED: Use proper Execute function name
+                IInteractableInterface::Execute_OnInteractionFocusLost(PreviousInteractable, this);
             }
         }
-
-        // Set new interactable
+        
+        // Update current interactable
         CurrentInteractable = NewInteractable;
-
-        // Focus new interactable
-        if (CurrentInteractable && IsValid(CurrentInteractable))
+        
+        // Add focus to new interactable
+        if (NewInteractable && IsValid(NewInteractable))
         {
-            if (CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
+            if (NewInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
             {
-                IInteractableInterface::Execute_StartFocus(CurrentInteractable, this);
+                // CORRECTED: Use proper Execute function name
+                IInteractableInterface::Execute_OnInteractionFocusGained(NewInteractable, this);
             }
         }
-
-        // Broadcast interaction state change
-        OnInteractableDetected.Broadcast(CurrentInteractable, bCanInteract);
+        
+        // Broadcast the change
+        OnInteractableDetected.Broadcast(NewInteractable, NewInteractable != nullptr);
     }
 }
 
@@ -442,19 +451,71 @@ void APlayerCharacter::UpdateSprintState()
 
     bool bWantsToSprint = bIsSprinting && GetVelocity().SizeSquared() > FMath::Square(50.0f);
     
-    if (bWantsToSprint && StaminaComp->CanSprint())
+    // CORRECTED: Use proper getter functions instead of direct access
+    if (bWantsToSprint)
     {
-        if (!StaminaComp->IsSprintActive())
+        // Check if we can sprint (have enough stamina and not exhausted)
+        if (StaminaComp->GetStaminaPercent() >= 0.2f && !StaminaComp->IsExhausted())
         {
-            StaminaComp->StartSprint();
+            // Check if sprint activity is already running using proper getter
+            bool bIsCurrentlySprinting = StaminaComp->IsActivityActive(EStaminaActivity::Sprinting);
+            
+            // Start sprinting if not already
+            if (!bIsCurrentlySprinting)
+            {
+                FStaminaCostInfo SprintCost;
+                SprintCost.BaseCost = 10.0f; // Cost per second
+                SprintCost.Activity = EStaminaActivity::Sprinting;
+                SprintCost.bIsContinuous = true;
+                SprintCost.Actor = this;
+                
+                StaminaComp->StartContinuousActivity(SprintCost);
+                UE_LOG(LogTemp, Log, TEXT("Started sprinting - stamina cost: %f per second"), SprintCost.BaseCost);
+            }
+        }
+        else
+        {
+            // Can't sprint, stop it
+            bIsSprinting = false;
+            GetCharacterMovement()->MaxWalkSpeed = 300.0f;
+            StaminaComp->StopContinuousActivity(EStaminaActivity::Sprinting);
+            UE_LOG(LogTemp, Warning, TEXT("Stopped sprinting - insufficient stamina or exhausted"));
         }
     }
     else
     {
-        if (StaminaComp->IsSprintActive())
+        // Not wanting to sprint, stop the activity if it's running
+        if (StaminaComp->IsActivityActive(EStaminaActivity::Sprinting))
         {
-            StaminaComp->StopSprint();
+            StaminaComp->StopContinuousActivity(EStaminaActivity::Sprinting);
+            UE_LOG(LogTemp, Log, TEXT("Stopped sprinting - no longer wanting to sprint"));
         }
+    }
+}
+
+// Additional helper function for debugging active activities
+void APlayerCharacter::LogActiveStaminaActivities() const
+{
+    UStaminaComponent* StaminaComp = GetStaminaComponent();
+    if (!StaminaComp)
+        return;
+
+    int32 ActiveCount = StaminaComp->GetActiveActivityCount();
+    if (ActiveCount > 0)
+    {
+        UE_LOG(LogTemp, Log, TEXT("Player has %d active stamina activities:"), ActiveCount);
+        
+        TArray<EStaminaActivity> ActiveTypes = StaminaComp->GetActiveActivityTypes();
+        for (EStaminaActivity Activity : ActiveTypes)
+        {
+            float Cost = StaminaComp->GetActivityCurrentCost(Activity);
+            UE_LOG(LogTemp, Log, TEXT("  - %s (Cost: %f per second)"), 
+                   *UEnum::GetValueAsString(Activity), Cost);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("Player has no active stamina activities"));
     }
 }
 
@@ -462,12 +523,28 @@ void APlayerCharacter::UpdateSprintState()
 
 void APlayerCharacter::StartSprint()
 {
-    bIsSprinting = true;
+    UStaminaComponent* StaminaComp = GetStaminaComponent();
+    if (!StaminaComp)
+        return;
+
+    // Check if we can sprint
+    if (StaminaComp->GetStaminaPercent() >= 0.2f && !StaminaComp->IsExhausted())
+    {
+        bIsSprinting = true;
+        GetCharacterMovement()->MaxWalkSpeed = 600.0f; // Sprint speed
+    }
 }
 
 void APlayerCharacter::StopSprint()
 {
     bIsSprinting = false;
+    GetCharacterMovement()->MaxWalkSpeed = 300.0f; // Normal speed
+    
+    UStaminaComponent* StaminaComp = GetStaminaComponent();
+    if (StaminaComp)
+    {
+        StaminaComp->StopContinuousActivity(EStaminaActivity::Sprinting);
+    }
 }
 
 void APlayerCharacter::StartJump()
@@ -505,7 +582,18 @@ void APlayerCharacter::InteractWithTarget()
     {
         if (CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
         {
-            IInteractableInterface::Execute_Interact(CurrentInteractable, this);
+            // CORRECTED: Use proper Execute function name and parameters
+            bool bSuccess = IInteractableInterface::Execute_OnInteract(
+                CurrentInteractable, 
+                this, 
+                CurrentInteractionPoint, 
+                CurrentInteractionNormal
+            );
+            
+            if (!bSuccess)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("Interaction with %s failed"), *CurrentInteractable->GetName());
+            }
         }
     }
 }
@@ -549,4 +637,76 @@ void APlayerCharacter::SetGamepadSensitivity(float NewSensitivity)
 void APlayerCharacter::SetInvertMouseY(bool bInvert)
 {
     bInvertMouseY = bInvert;
+}
+
+void APlayerCharacter::HandleMoveInput(const FInputActionValue& Value)
+{
+    // Extract movement vector from input
+    FVector2D MovementVector = Value.Get<FVector2D>();
+    
+    // Use existing movement function
+    MoveCharacter(MovementVector);
+}
+
+void APlayerCharacter::HandleLookInput(const FVector2D& LookInput)
+{
+    // Add controller yaw and pitch input
+    if (!FMath::IsNearlyZero(LookInput.X))
+    {
+        AddControllerYawInput(LookInput.X);
+    }
+    
+    if (!FMath::IsNearlyZero(LookInput.Y))
+    {
+        AddControllerPitchInput(LookInput.Y);
+    }
+}
+
+void APlayerCharacter::TryInteract()
+{
+    // Use existing interaction function
+    InteractWithTarget();
+}
+
+void APlayerCharacter::HandleZoomInput(const FInputActionValue& Value)
+{
+    // Get scroll value
+    float ScrollValue = Value.Get<float>();
+    
+    // Only handle zoom in third person mode
+    if (CurrentCameraMode == ECameraMode::ThirdPerson)
+    {
+        // Toggle zoom based on scroll direction
+        if (FMath::Abs(ScrollValue) > 0.1f)
+        {
+            ToggleThirdPersonZoom();
+        }
+    }
+}
+
+void APlayerCharacter::StartSprinting()
+{
+    // Use existing sprint function
+    StartSprint();
+}
+
+void APlayerCharacter::StopSprinting()
+{
+    // Use existing sprint function
+    StopSprint();
+}
+
+bool APlayerCharacter::CanSprint() const
+{
+    UStaminaComponent* StaminaComp = GetStaminaComponent();
+    if (!StaminaComp)
+        return false;
+    
+    // Check if we have enough stamina and aren't exhausted
+    return StaminaComp->GetStaminaPercent() >= 0.2f && !StaminaComp->IsExhausted();
+}
+
+bool APlayerCharacter::IsSprinting() const
+{
+    return bIsSprinting;
 }
