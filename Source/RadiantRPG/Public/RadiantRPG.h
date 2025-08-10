@@ -7,6 +7,7 @@
 #include "Modules/ModuleManager.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogRadiantRPG, Log, All);
+DECLARE_LOG_CATEGORY_EXTERN(LogARPG, Log, All);
 
 /**
  * Main module class for RadiantRPG

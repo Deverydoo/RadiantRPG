@@ -1,5 +1,5 @@
 // Private/Characters/PlayerCharacter.cpp
-// Corrected player character implementation using existing component functions
+// Fixed sprint implementation with proper speed changes and debug logging
 
 #include "Characters/PlayerCharacter.h"
 #include "Camera/CameraComponent.h"
@@ -14,6 +14,13 @@
 // Component includes
 #include "Components/StaminaComponent.h"
 #include "Interaction/InteractableInterface.h"
+
+// Console variable for sprint debug
+static TAutoConsoleVariable<int32> CVarDebugSprint(
+    TEXT("radiant.debug.sprint"),
+    0,
+    TEXT("Show sprint debug info (0=off, 1=on)"),
+    ECVF_Default);
 
 APlayerCharacter::APlayerCharacter()
 {
@@ -37,42 +44,40 @@ APlayerCharacter::APlayerCharacter()
     GetCharacterMovement()->MinAnalogWalkSpeed = 20.0f;
     GetCharacterMovement()->BrakingDecelerationWalking = 2000.0f;
 
-    // Create third person camera boom (positioned to the right of player)
+    // Create third person camera boom
     ThirdPersonCameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("ThirdPersonCameraBoom"));
     ThirdPersonCameraBoom->SetupAttachment(RootComponent);
     ThirdPersonCameraBoom->TargetArmLength = 350.0f;
+    ThirdPersonCameraBoom->SocketOffset = FVector(0.0f, 50.0f, 50.0f);
     ThirdPersonCameraBoom->bUsePawnControlRotation = true;
     ThirdPersonCameraBoom->bInheritPitch = true;
     ThirdPersonCameraBoom->bInheritYaw = true;
     ThirdPersonCameraBoom->bInheritRoll = false;
-    ThirdPersonCameraBoom->bDoCollisionTest = true;
     ThirdPersonCameraBoom->bEnableCameraLag = true;
-    ThirdPersonCameraBoom->CameraLagSpeed = 3.0f;
-    ThirdPersonCameraBoom->CameraLagMaxDistance = 50.0f;
-    
-    // IMPORTANT: Position camera to the right of the player, not directly behind
-    // This creates the over-the-shoulder view like in the reference image
-    ThirdPersonCameraBoom->SocketOffset = FVector(0.0f, 80.0f, 40.0f); // Right and up offset
-    ThirdPersonCameraBoom->TargetOffset = FVector(0.0f, 0.0f, 60.0f);   // Look slightly above character center
+    ThirdPersonCameraBoom->CameraLagSpeed = 12.0f;
 
     // Create third person camera
     ThirdPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("ThirdPersonCamera"));
     ThirdPersonCamera->SetupAttachment(ThirdPersonCameraBoom, USpringArmComponent::SocketName);
     ThirdPersonCamera->bUsePawnControlRotation = false;
+    ThirdPersonCamera->FieldOfView = 90.0f;
 
-    // Create first person camera attached to head/neck area
+    // Create first person camera
     FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-    FirstPersonCamera->SetupAttachment(GetMesh(), TEXT("head")); // Attach to head socket if available
+    FirstPersonCamera->SetupAttachment(GetMesh(), TEXT("head"));
     FirstPersonCamera->SetRelativeLocation(FVector(10.0f, 0.0f, 0.0f));
     FirstPersonCamera->bUsePawnControlRotation = true;
+    FirstPersonCamera->FieldOfView = 90.0f;
+    FirstPersonCamera->SetActive(false);
 
-    // Initialize camera settings
+    // Default camera settings
     CurrentCameraMode = ECameraMode::ThirdPerson;
     CurrentZoomLevel = EThirdPersonZoom::Close;
     CameraTransitionSpeed = 5.0f;
-    ThirdPersonCloseDistance = 250.0f;
-    ThirdPersonFarDistance = 500.0f;
-    ThirdPersonCameraLag = 3.0f;
+    CloseZoomDistance = 350.0f;
+    FarZoomDistance = 600.0f;
+    CloseZoomOffset = FVector(0.0f, 50.0f, 50.0f);
+    FarZoomOffset = FVector(0.0f, 0.0f, 100.0f);
     FirstPersonCameraOffset = FVector(10.0f, 0.0f, 0.0f);
 
     // Input settings
@@ -82,23 +87,17 @@ APlayerCharacter::APlayerCharacter()
     bUseTankControls = false;
     RotationSpeed = 1.0f;
 
-    // Interaction settings - CRITICAL: Adjust for camera distance
-    BaseInteractionDistance = 300.0f; // Increased base distance
+    // Interaction settings
+    BaseInteractionDistance = 300.0f;
     InteractionSphereRadius = 15.0f;
-    InteractionChannel = ECC_GameTraceChannel1; // Custom Interaction channel
-
-    // Debug settings
-    bShowInteractionDebug = false;
+    InteractionChannel = ECC_GameTraceChannel1;
 
     // Movement state
     bIsSprinting = false;
+    NormalSpeed = 300.0f;
+    SprintSpeed = 600.0f;
 
-    // Performance optimization
-    LastControlRotationUpdate = 0.0f;
-    CameraTransitionProgress = 1.0f;
-    bIsTransitioningCamera = false;
-
-    // Set proper collision for interaction
+    // Set proper collision
     GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore);
 }
 
@@ -108,6 +107,12 @@ void APlayerCharacter::BeginPlay()
     
     InitializePlayerComponents();
     UpdateCameraMode();
+    
+    // Ensure normal speed is set at start
+    GetCharacterMovement()->MaxWalkSpeed = NormalSpeed;
+    
+    UE_LOG(LogTemp, Log, TEXT("PlayerCharacter initialized - Normal Speed: %f, Sprint Speed: %f"), 
+           NormalSpeed, SprintSpeed);
 }
 
 void APlayerCharacter::Tick(float DeltaTime)
@@ -117,311 +122,188 @@ void APlayerCharacter::Tick(float DeltaTime)
     UpdateCameraMode();
     UpdateInteractionDetection();
     UpdateSprintState();
+    
+    // Debug logging
+    if (CVarDebugSprint.GetValueOnGameThread() > 0)
+    {
+        FString SprintStatus = bIsSprinting ? TEXT("SPRINTING") : TEXT("WALKING");
+        float CurrentSpeed = GetCharacterMovement()->MaxWalkSpeed;
+        float ActualVelocity = GetVelocity().Size();
+        
+        GEngine->AddOnScreenDebugMessage(1, 0.0f, FColor::Yellow, 
+            FString::Printf(TEXT("Sprint Status: %s | Max Speed: %.0f | Actual Speed: %.0f"), 
+            *SprintStatus, CurrentSpeed, ActualVelocity));
+        
+        if (UStaminaComponent* StaminaComp = GetStaminaComponent())
+        {
+            GEngine->AddOnScreenDebugMessage(2, 0.0f, FColor::Cyan, 
+                FString::Printf(TEXT("Stamina: %.1f%% | Exhausted: %s"), 
+                StaminaComp->GetStaminaPercent() * 100.0f,
+                StaminaComp->IsExhausted() ? TEXT("YES") : TEXT("NO")));
+        }
+    }
 }
 
-void APlayerCharacter::InitializePlayerComponents()
+// === SPRINT FUNCTIONS ===
+
+void APlayerCharacter::StartSprint()
 {
-    // Additional player-specific initialization
-    if (FirstPersonCamera && GetMesh())
+    UStaminaComponent* StaminaComp = GetStaminaComponent();
+    
+    // Debug log
+    UE_LOG(LogTemp, Log, TEXT("StartSprint called - Current Speed: %f"), 
+           GetCharacterMovement()->MaxWalkSpeed);
+    
+    if (!StaminaComp)
     {
-        // Try to attach to head socket, fallback to relative positioning
-        if (GetMesh()->DoesSocketExist(TEXT("head")))
+        UE_LOG(LogTemp, Warning, TEXT("StartSprint: No StaminaComponent found!"));
+        return;
+    }
+
+    // Check if we can sprint
+    if (StaminaComp->GetStaminaPercent() >= 0.1f && !StaminaComp->IsExhausted())
+    {
+        bIsSprinting = true;
+        GetCharacterMovement()->MaxWalkSpeed = SprintSpeed;
+        
+        UE_LOG(LogTemp, Log, TEXT("Sprint STARTED - Speed set to %f"), SprintSpeed);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Cannot sprint - Stamina: %f%%, Exhausted: %s"), 
+               StaminaComp->GetStaminaPercent() * 100.0f,
+               StaminaComp->IsExhausted() ? TEXT("Yes") : TEXT("No"));
+    }
+}
+
+void APlayerCharacter::StopSprint()
+{
+    UE_LOG(LogTemp, Log, TEXT("StopSprint called"));
+    
+    bIsSprinting = false;
+    GetCharacterMovement()->MaxWalkSpeed = NormalSpeed;
+    
+    UStaminaComponent* StaminaComp = GetStaminaComponent();
+    if (StaminaComp)
+    {
+        StaminaComp->StopContinuousActivity(EStaminaActivity::Sprinting);
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("Sprint STOPPED - Speed set to %f"), NormalSpeed);
+}
+
+void APlayerCharacter::UpdateSprintState()
+{
+    UStaminaComponent* StaminaComp = GetStaminaComponent();
+    if (!StaminaComp)
+        return;
+
+    // Check if we're actually moving
+    bool bIsMoving = GetVelocity().SizeSquared() > FMath::Square(50.0f);
+    bool bWantsToSprint = bIsSprinting && bIsMoving;
+    
+    if (bWantsToSprint)
+    {
+        // Check if we still can sprint
+        if (StaminaComp->GetStaminaPercent() >= 0.05f && !StaminaComp->IsExhausted())
         {
-            FirstPersonCamera->AttachToComponent(GetMesh(), 
-                FAttachmentTransformRules::SnapToTargetIncludingScale, TEXT("head"));
+            // Ensure sprint speed is maintained
+            if (GetCharacterMovement()->MaxWalkSpeed != SprintSpeed)
+            {
+                GetCharacterMovement()->MaxWalkSpeed = SprintSpeed;
+                UE_LOG(LogTemp, Warning, TEXT("Sprint speed was reset, restoring to %f"), SprintSpeed);
+            }
+            
+            // Start stamina drain if not already active
+            if (!StaminaComp->IsActivityActive(EStaminaActivity::Sprinting))
+            {
+                FStaminaCostInfo SprintCost;
+                SprintCost.BaseCost = 10.0f; // Cost per second
+                SprintCost.Activity = EStaminaActivity::Sprinting;
+                SprintCost.bIsContinuous = true;
+                SprintCost.Actor = this;
+                
+                StaminaComp->StartContinuousActivity(SprintCost);
+            }
         }
         else
         {
-            FirstPersonCamera->SetRelativeLocation(FirstPersonCameraOffset);
+            // Out of stamina, force stop sprint
+            StopSprint();
+            UE_LOG(LogTemp, Warning, TEXT("Forced sprint stop - out of stamina"));
         }
     }
-}
-
-// === CAMERA MANAGEMENT ===
-
-UCameraComponent* APlayerCharacter::GetActiveCamera() const
-{
-    return (CurrentCameraMode == ECameraMode::FirstPerson) ? FirstPersonCamera : ThirdPersonCamera;
-}
-
-void APlayerCharacter::UpdateCameraMode()
-{
-    if (bIsTransitioningCamera)
+    else if (!bIsSprinting && GetCharacterMovement()->MaxWalkSpeed != NormalSpeed)
     {
-        CameraTransitionProgress = FMath::Clamp(CameraTransitionProgress + GetWorld()->GetDeltaSeconds() * CameraTransitionSpeed, 0.0f, 1.0f);
+        // Ensure we're at normal speed when not sprinting
+        GetCharacterMovement()->MaxWalkSpeed = NormalSpeed;
         
-        if (CameraTransitionProgress >= 1.0f)
+        // Stop stamina drain
+        if (StaminaComp->IsActivityActive(EStaminaActivity::Sprinting))
         {
-            bIsTransitioningCamera = false;
+            StaminaComp->StopContinuousActivity(EStaminaActivity::Sprinting);
         }
-    }
-
-    // Update third person camera settings
-    UpdateThirdPersonCameraSettings();
-
-    // Ensure proper camera activation
-    if (ThirdPersonCamera && FirstPersonCamera)
-    {
-        ThirdPersonCamera->SetActive(CurrentCameraMode == ECameraMode::ThirdPerson);
-        FirstPersonCamera->SetActive(CurrentCameraMode == ECameraMode::FirstPerson);
     }
 }
 
-void APlayerCharacter::UpdateThirdPersonCameraSettings()
+// Wrapper functions for controller
+void APlayerCharacter::StartSprinting()
 {
-    if (!ThirdPersonCameraBoom)
-        return;
-
-    float TargetDistance = (CurrentZoomLevel == EThirdPersonZoom::Close) ? 
-        ThirdPersonCloseDistance : ThirdPersonFarDistance;
-    
-    ThirdPersonCameraBoom->TargetArmLength = TargetDistance;
-    ThirdPersonCameraBoom->CameraLagSpeed = ThirdPersonCameraLag;
-    ThirdPersonCameraBoom->CameraLagMaxDistance = 50.0f;
-    
-    // Maintain the right-side offset regardless of zoom
-    ThirdPersonCameraBoom->SocketOffset = FVector(0.0f, 80.0f, 40.0f);
-    ThirdPersonCameraBoom->TargetOffset = FVector(0.0f, 0.0f, 60.0f);
+    StartSprint();
 }
 
-// === INTERACTION SYSTEM ===
-
-void APlayerCharacter::UpdateInteractionDetection()
+void APlayerCharacter::StopSprinting()
 {
-    if (!Controller)
-        return;
-
-    // Cache control rotation for performance (update at 30Hz max)
-    float CurrentTime = GetWorld()->GetTimeSeconds();
-    if (CurrentTime - LastControlRotationUpdate > 0.0333f)
-    {
-        CachedControlRotation = Controller->GetControlRotation();
-        LastControlRotationUpdate = CurrentTime;
-    }
-
-    // Get trace parameters with camera distance compensation
-    FVector TraceStart = GetInteractionTraceStart();
-    FVector TraceDirection = GetInteractionTraceDirection();
-    
-    // CRITICAL FIX: Calculate effective interaction distance based on camera mode and distance
-    float EffectiveInteractionDistance = CalculateEffectiveInteractionDistance();
-    FVector TraceEnd = TraceStart + (TraceDirection * EffectiveInteractionDistance);
-    
-    // Enhanced collision query params
-    FCollisionQueryParams QueryParams;
-    QueryParams.AddIgnoredActor(this);
-    QueryParams.bTraceComplex = false;
-    QueryParams.bReturnPhysicalMaterial = false;
-    QueryParams.bIgnoreBlocks = false;
-    
-    // Perform primary interaction trace using sphere sweep for better reliability
-    FHitResult HitResult;
-    bool bHit = GetWorld()->SweepSingleByChannel(
-        HitResult,
-        TraceStart,
-        TraceEnd,
-        FQuat::Identity,
-        InteractionChannel,
-        FCollisionShape::MakeSphere(InteractionSphereRadius),
-        QueryParams
-    );
-
-    // Debug visualization (only in development builds)
-    #if WITH_EDITOR
-    if (bShowInteractionDebug)
-    {
-        FColor DebugColor = bHit ? FColor::Green : FColor::Red;
-        DrawDebugLine(GetWorld(), TraceStart, TraceEnd, DebugColor, false, 0.1f, 0, 2.0f);
-        DrawDebugSphere(GetWorld(), TraceStart, 5.0f, 8, FColor::Blue, false, 0.1f);
-        
-        if (bHit)
-        {
-            DrawDebugSphere(GetWorld(), HitResult.Location, InteractionSphereRadius, 12, FColor::Yellow, false, 0.1f);
-        }
-    }
-    #endif
-
-    // Process hit result
-    ProcessInteractionHit(bHit, HitResult);
+    StopSprint();
 }
 
-float APlayerCharacter::CalculateEffectiveInteractionDistance() const
+bool APlayerCharacter::CanSprint() const
 {
-    float EffectiveDistance = BaseInteractionDistance;
-    
-    if (CurrentCameraMode == ECameraMode::ThirdPerson && ThirdPersonCameraBoom)
-    {
-        // CRITICAL FIX: Add camera distance to interaction range for third person
-        // This compensates for the camera being behind the character
-        float CameraDistance = ThirdPersonCameraBoom->TargetArmLength;
-        EffectiveDistance += CameraDistance * 0.7f; // 70% of camera distance compensation
-        
-        // Additional compensation for camera offset to the right
-        EffectiveDistance += 100.0f; // Extra range to account for angle offset
-    }
-    
-    return EffectiveDistance;
-}
-
-FVector APlayerCharacter::GetInteractionTraceStart() const
-{
-    UCameraComponent* ActiveCamera = GetActiveCamera();
-    if (ActiveCamera && IsValid(ActiveCamera))
-    {
-        FVector CameraLocation = ActiveCamera->GetComponentLocation();
-        
-        // For third person, start trace from camera but adjust for better targeting
-        if (CurrentCameraMode == ECameraMode::ThirdPerson)
-        {
-            // Move trace start towards the character to account for camera offset
-            FVector ToCharacter = (GetActorLocation() - CameraLocation).GetSafeNormal();
-            CameraLocation += ToCharacter * 80.0f; // Move 80cm towards character
-            
-            // Also adjust for the right-side camera offset by angling slightly left
-            FVector RightVector = ActiveCamera->GetRightVector();
-            CameraLocation -= RightVector * 30.0f; // Adjust 30cm to the left
-        }
-        
-        return CameraLocation;
-    }
-    
-    // Enhanced fallback - use character's eye level with proper third-person offset
-    FVector EyeLocation = GetActorLocation() + FVector(0.0f, 0.0f, BaseEyeHeight);
-    
-    if (CurrentCameraMode == ECameraMode::ThirdPerson)
-    {
-        // For third person fallback, start from in front of character
-        FVector ForwardVector = GetActorForwardVector();
-        FVector RightVector = GetActorRightVector();
-        
-        // Position similar to where camera would be looking from
-        EyeLocation += ForwardVector * 100.0f;  // Forward offset
-        EyeLocation += RightVector * 50.0f;     // Right offset to match camera
-        EyeLocation += FVector(0.0f, 0.0f, 30.0f); // Slight height adjustment
-    }
-    
-    return EyeLocation;
-}
-
-FVector APlayerCharacter::GetInteractionTraceDirection() const
-{
-    UCameraComponent* ActiveCamera = GetActiveCamera();
-    if (ActiveCamera && IsValid(ActiveCamera))
-    {
-        FVector CameraForward = ActiveCamera->GetForwardVector();
-        
-        // For third person, adjust the trace direction to account for crosshair alignment
-        if (CurrentCameraMode == ECameraMode::ThirdPerson)
-        {
-            // Calculate where the crosshair is actually pointing
-            FVector TraceStart = GetInteractionTraceStart();
-            FVector ScreenCenter = ActiveCamera->GetComponentLocation() + (CameraForward * 1000.0f);
-            
-            // Direct the trace towards where the crosshair points, not just camera forward
-            FVector AdjustedDirection = (ScreenCenter - TraceStart).GetSafeNormal();
-            return AdjustedDirection;
-        }
-        
-        return CameraForward;
-    }
-    
-    // Fallback to cached control rotation
-    return CachedControlRotation.Vector();
-}
-
-void APlayerCharacter::ProcessInteractionHit(bool bHit, const FHitResult& HitResult)
-{
-    AActor* PreviousInteractable = CurrentInteractable;
-    AActor* NewInteractable = nullptr;
-
-    if (bHit && HitResult.GetActor())
-    {
-        AActor* HitActor = HitResult.GetActor();
-        if (IsActorInteractable(HitActor))
-        {
-            NewInteractable = HitActor;
-            CurrentInteractionPoint = HitResult.Location;
-            CurrentInteractionNormal = HitResult.Normal;
-        }
-    }
-
-    // Handle interactable changes with proper focus management
-    if (PreviousInteractable != NewInteractable)
-    {
-        // Remove focus from previous interactable
-        if (PreviousInteractable && IsValid(PreviousInteractable))
-        {
-            if (PreviousInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
-            {
-                // CORRECTED: Use proper Execute function name
-                IInteractableInterface::Execute_OnInteractionFocusLost(PreviousInteractable, this);
-            }
-        }
-        
-        // Update current interactable
-        CurrentInteractable = NewInteractable;
-        
-        // Add focus to new interactable
-        if (NewInteractable && IsValid(NewInteractable))
-        {
-            if (NewInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
-            {
-                // CORRECTED: Use proper Execute function name
-                IInteractableInterface::Execute_OnInteractionFocusGained(NewInteractable, this);
-            }
-        }
-        
-        // Broadcast the change
-        OnInteractableDetected.Broadcast(NewInteractable, NewInteractable != nullptr);
-    }
-}
-
-bool APlayerCharacter::IsActorInteractable(AActor* Actor) const
-{
-    if (!Actor || !IsValid(Actor))
+    UStaminaComponent* StaminaComp = GetStaminaComponent();
+    if (!StaminaComp)
         return false;
     
-    // Check for interactable interface first
-    if (Actor->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
-    {
-        return IInteractableInterface::Execute_CanInteract(Actor, const_cast<APlayerCharacter*>(this));
-    }
-    
-    // Fallback to actor tags
-    return Actor->ActorHasTag(FName("Interactable"));
+    return StaminaComp->GetStaminaPercent() >= 0.1f && !StaminaComp->IsExhausted();
 }
 
-// === MOVEMENT INTERFACE ===
+bool APlayerCharacter::IsSprinting() const
+{
+    return bIsSprinting && GetCharacterMovement()->MaxWalkSpeed == SprintSpeed;
+}
+
+// === MOVEMENT FUNCTIONS ===
 
 void APlayerCharacter::MoveCharacter(const FVector2D& MovementVector)
 {
-    if (Controller && MovementVector.SizeSquared() > 0.0f)
+    if (bUseTankControls)
     {
-        if (bUseTankControls)
-        {
-            HandleTankMovement(MovementVector);
-        }
-        else
-        {
-            HandleModernMovement(MovementVector);
-        }
+        HandleTankMovement(MovementVector);
     }
+    else
+    {
+        HandleModernMovement(MovementVector);
+    }
+}
+
+void APlayerCharacter::HandleMoveInput(const FInputActionValue& Value)
+{
+    FVector2D MovementVector = Value.Get<FVector2D>();
+    MoveCharacter(MovementVector);
 }
 
 void APlayerCharacter::HandleTankMovement(const FVector2D& MovementVector)
 {
-    // Tank controls: Forward/Back for movement, Left/Right for rotation
+    // Tank controls: forward/back movement, left/right rotation
     float ForwardInput = MovementVector.Y;
     float RotationInput = MovementVector.X;
 
-    // Apply forward/backward movement
     if (FMath::Abs(ForwardInput) > 0.0f)
     {
-        FVector ForwardDirection = GetActorForwardVector();
-        AddMovementInput(ForwardDirection, ForwardInput);
+        const FRotator Rotation = GetActorRotation();
+        const FVector Direction = FRotationMatrix(Rotation).GetUnitAxis(EAxis::X);
+        AddMovementInput(Direction, ForwardInput);
     }
 
-    // Apply rotation
     if (FMath::Abs(RotationInput) > 0.0f)
     {
         float RotationRate = RotationSpeed * GetWorld()->GetDeltaSeconds();
@@ -443,107 +325,14 @@ void APlayerCharacter::HandleModernMovement(const FVector2D& MovementVector)
     AddMovementInput(RightDirection, MovementVector.X);
 }
 
-void APlayerCharacter::UpdateSprintState()
+// === OTHER INPUT FUNCTIONS ===
+
+void APlayerCharacter::HandleLookInput(const FVector2D& LookInput)
 {
-    UStaminaComponent* StaminaComp = GetStaminaComponent();
-    if (!StaminaComp)
-        return;
-
-    bool bWantsToSprint = bIsSprinting && GetVelocity().SizeSquared() > FMath::Square(50.0f);
-    
-    // CORRECTED: Use proper getter functions instead of direct access
-    if (bWantsToSprint)
+    if (Controller)
     {
-        // Check if we can sprint (have enough stamina and not exhausted)
-        if (StaminaComp->GetStaminaPercent() >= 0.2f && !StaminaComp->IsExhausted())
-        {
-            // Check if sprint activity is already running using proper getter
-            bool bIsCurrentlySprinting = StaminaComp->IsActivityActive(EStaminaActivity::Sprinting);
-            
-            // Start sprinting if not already
-            if (!bIsCurrentlySprinting)
-            {
-                FStaminaCostInfo SprintCost;
-                SprintCost.BaseCost = 10.0f; // Cost per second
-                SprintCost.Activity = EStaminaActivity::Sprinting;
-                SprintCost.bIsContinuous = true;
-                SprintCost.Actor = this;
-                
-                StaminaComp->StartContinuousActivity(SprintCost);
-                UE_LOG(LogTemp, Log, TEXT("Started sprinting - stamina cost: %f per second"), SprintCost.BaseCost);
-            }
-        }
-        else
-        {
-            // Can't sprint, stop it
-            bIsSprinting = false;
-            GetCharacterMovement()->MaxWalkSpeed = 300.0f;
-            StaminaComp->StopContinuousActivity(EStaminaActivity::Sprinting);
-            UE_LOG(LogTemp, Warning, TEXT("Stopped sprinting - insufficient stamina or exhausted"));
-        }
-    }
-    else
-    {
-        // Not wanting to sprint, stop the activity if it's running
-        if (StaminaComp->IsActivityActive(EStaminaActivity::Sprinting))
-        {
-            StaminaComp->StopContinuousActivity(EStaminaActivity::Sprinting);
-            UE_LOG(LogTemp, Log, TEXT("Stopped sprinting - no longer wanting to sprint"));
-        }
-    }
-}
-
-// Additional helper function for debugging active activities
-void APlayerCharacter::LogActiveStaminaActivities() const
-{
-    UStaminaComponent* StaminaComp = GetStaminaComponent();
-    if (!StaminaComp)
-        return;
-
-    int32 ActiveCount = StaminaComp->GetActiveActivityCount();
-    if (ActiveCount > 0)
-    {
-        UE_LOG(LogTemp, Log, TEXT("Player has %d active stamina activities:"), ActiveCount);
-        
-        TArray<EStaminaActivity> ActiveTypes = StaminaComp->GetActiveActivityTypes();
-        for (EStaminaActivity Activity : ActiveTypes)
-        {
-            float Cost = StaminaComp->GetActivityCurrentCost(Activity);
-            UE_LOG(LogTemp, Log, TEXT("  - %s (Cost: %f per second)"), 
-                   *UEnum::GetValueAsString(Activity), Cost);
-        }
-    }
-    else
-    {
-        UE_LOG(LogTemp, Log, TEXT("Player has no active stamina activities"));
-    }
-}
-
-// === INPUT INTERFACE ===
-
-void APlayerCharacter::StartSprint()
-{
-    UStaminaComponent* StaminaComp = GetStaminaComponent();
-    if (!StaminaComp)
-        return;
-
-    // Check if we can sprint
-    if (StaminaComp->GetStaminaPercent() >= 0.2f && !StaminaComp->IsExhausted())
-    {
-        bIsSprinting = true;
-        GetCharacterMovement()->MaxWalkSpeed = 600.0f; // Sprint speed
-    }
-}
-
-void APlayerCharacter::StopSprint()
-{
-    bIsSprinting = false;
-    GetCharacterMovement()->MaxWalkSpeed = 300.0f; // Normal speed
-    
-    UStaminaComponent* StaminaComp = GetStaminaComponent();
-    if (StaminaComp)
-    {
-        StaminaComp->StopContinuousActivity(EStaminaActivity::Sprinting);
+        AddControllerYawInput(LookInput.X);
+        AddControllerPitchInput(LookInput.Y);
     }
 }
 
@@ -557,12 +346,50 @@ void APlayerCharacter::StopJump()
     StopJumping();
 }
 
+void APlayerCharacter::TryInteract()
+{
+    InteractWithTarget();
+}
+
+void APlayerCharacter::HandleZoomInput(const FInputActionValue& Value)
+{
+    float ScrollValue = Value.Get<float>();
+    
+    if (CurrentCameraMode == ECameraMode::ThirdPerson && FMath::Abs(ScrollValue) > 0.1f)
+    {
+        ToggleThirdPersonZoom();
+    }
+}
+
+// === CAMERA MANAGEMENT ===
+
 void APlayerCharacter::ToggleCameraMode()
 {
     ECameraMode NewMode = (CurrentCameraMode == ECameraMode::FirstPerson) ? 
         ECameraMode::ThirdPerson : ECameraMode::FirstPerson;
     
     SetCameraMode(NewMode);
+}
+
+void APlayerCharacter::SetCameraMode(ECameraMode NewMode)
+{
+    if (CurrentCameraMode == NewMode)
+        return;
+
+    CurrentCameraMode = NewMode;
+    bIsTransitioningCamera = true;
+    CameraTransitionProgress = 0.0f;
+
+    // Hide/show mesh based on camera mode
+    if (GetMesh())
+    {
+        GetMesh()->SetOwnerNoSee(CurrentCameraMode == ECameraMode::FirstPerson);
+    }
+
+    OnCameraModeChanged.Broadcast(CurrentCameraMode);
+    
+    UE_LOG(LogTemp, Log, TEXT("Camera mode changed to %s"),
+           CurrentCameraMode == ECameraMode::FirstPerson ? TEXT("First Person") : TEXT("Third Person"));
 }
 
 void APlayerCharacter::ToggleThirdPersonZoom()
@@ -576,53 +403,204 @@ void APlayerCharacter::ToggleThirdPersonZoom()
     }
 }
 
-void APlayerCharacter::InteractWithTarget()
+void APlayerCharacter::SetThirdPersonZoom(EThirdPersonZoom NewZoom)
 {
-    if (CurrentInteractable && IsValid(CurrentInteractable))
+    CurrentZoomLevel = NewZoom;
+    UpdateThirdPersonCameraSettings();
+}
+
+UCameraComponent* APlayerCharacter::GetActiveCamera() const
+{
+    return (CurrentCameraMode == ECameraMode::FirstPerson) ? FirstPersonCamera : ThirdPersonCamera;
+}
+
+void APlayerCharacter::UpdateCameraMode()
+{
+    if (bIsTransitioningCamera)
     {
-        if (CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
+        CameraTransitionProgress = FMath::Clamp(CameraTransitionProgress + GetWorld()->GetDeltaSeconds() * CameraTransitionSpeed, 0.0f, 1.0f);
+        
+        if (CameraTransitionProgress >= 1.0f)
         {
-            // CORRECTED: Use proper Execute function name and parameters
-            bool bSuccess = IInteractableInterface::Execute_OnInteract(
-                CurrentInteractable, 
-                this, 
-                CurrentInteractionPoint, 
-                CurrentInteractionNormal
-            );
-            
-            if (!bSuccess)
-            {
-                UE_LOG(LogTemp, Warning, TEXT("Interaction with %s failed"), *CurrentInteractable->GetName());
-            }
+            bIsTransitioningCamera = false;
+        }
+    }
+
+    UpdateThirdPersonCameraSettings();
+
+    if (ThirdPersonCamera && FirstPersonCamera)
+    {
+        ThirdPersonCamera->SetActive(CurrentCameraMode == ECameraMode::ThirdPerson);
+        FirstPersonCamera->SetActive(CurrentCameraMode == ECameraMode::FirstPerson);
+    }
+}
+
+void APlayerCharacter::UpdateThirdPersonCameraSettings()
+{
+    if (!ThirdPersonCameraBoom)
+        return;
+
+    float TargetDistance = (CurrentZoomLevel == EThirdPersonZoom::Close) ? CloseZoomDistance : FarZoomDistance;
+    FVector TargetOffset = (CurrentZoomLevel == EThirdPersonZoom::Close) ? CloseZoomOffset : FarZoomOffset;
+
+    ThirdPersonCameraBoom->TargetArmLength = FMath::FInterpTo(
+        ThirdPersonCameraBoom->TargetArmLength, 
+        TargetDistance, 
+        GetWorld()->GetDeltaSeconds(), 
+        5.0f
+    );
+
+    ThirdPersonCameraBoom->SocketOffset = FMath::VInterpTo(
+        ThirdPersonCameraBoom->SocketOffset,
+        TargetOffset,
+        GetWorld()->GetDeltaSeconds(),
+        5.0f
+    );
+}
+
+// === INTERACTION SYSTEM ===
+
+void APlayerCharacter::UpdateInteractionDetection()
+{
+    FVector TraceStart = GetInteractionTraceStart();
+    FVector TraceDirection = GetInteractionTraceDirection();
+    float TraceDistance = CalculateEffectiveInteractionDistance();
+    FVector TraceEnd = TraceStart + (TraceDirection * TraceDistance);
+
+    FHitResult HitResult;
+    FCollisionQueryParams QueryParams;
+    QueryParams.AddIgnoredActor(this);
+    QueryParams.bTraceComplex = false;
+
+    bool bHit = GetWorld()->SweepSingleByChannel(
+        HitResult,
+        TraceStart,
+        TraceEnd,
+        FQuat::Identity,
+        InteractionChannel,
+        FCollisionShape::MakeSphere(InteractionSphereRadius),
+        QueryParams
+    );
+
+    ProcessInteractionHit(bHit, HitResult);
+
+    // Debug visualization
+    if (bShowInteractionDebug || CVarDebugSprint.GetValueOnGameThread() > 0)
+    {
+        FColor DebugColor = bHit ? FColor::Green : FColor::Red;
+        DrawDebugLine(GetWorld(), TraceStart, TraceEnd, DebugColor, false, -1.0f, 0, 2.0f);
+        DrawDebugSphere(GetWorld(), TraceEnd, InteractionSphereRadius, 12, DebugColor, false, -1.0f);
+        
+        if (bHit)
+        {
+            DrawDebugSphere(GetWorld(), HitResult.Location, 20.0f, 12, FColor::Yellow, false, -1.0f);
         }
     }
 }
 
-// === CAMERA SETTINGS ===
-
-void APlayerCharacter::SetCameraMode(ECameraMode NewMode)
+void APlayerCharacter::ProcessInteractionHit(bool bHit, const FHitResult& HitResult)
 {
-    if (CurrentCameraMode != NewMode)
+    AActor* HitActor = bHit ? HitResult.GetActor() : nullptr;
+    
+    if (bHit && IsActorInteractable(HitActor))
     {
-        CurrentCameraMode = NewMode;
-        bIsTransitioningCamera = true;
-        CameraTransitionProgress = 0.0f;
-        
-        OnCameraModeChanged.Broadcast(CurrentCameraMode);
+        if (CurrentInteractable != HitActor)
+        {
+            CurrentInteractable = HitActor;
+            OnInteractableDetected.Broadcast(CurrentInteractable, true);
+        }
+    }
+    else
+    {
+        if (CurrentInteractable)
+        {
+            OnInteractableDetected.Broadcast(CurrentInteractable, false);
+            CurrentInteractable = nullptr;
+        }
     }
 }
 
-void APlayerCharacter::SetThirdPersonZoom(EThirdPersonZoom NewZoom)
+void APlayerCharacter::InteractWithTarget()
 {
-    if (CurrentZoomLevel != NewZoom)
+    if (!CurrentInteractable)
+        return;
+
+    if (CurrentInteractable->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()))
     {
-        CurrentZoomLevel = NewZoom;
-        bIsTransitioningCamera = true;
-        CameraTransitionProgress = 0.0f;
+        // Get interaction point and normal for the interface call
+        FVector InteractionPoint = CurrentInteractable->GetActorLocation();
+        FVector InteractionNormal = (GetActorLocation() - CurrentInteractable->GetActorLocation()).GetSafeNormal();
+        
+        // Call the interface function with all required parameters
+        IInteractableInterface::Execute_OnInteract(
+            CurrentInteractable,           // Target object
+            this,                         // Interacting character
+            InteractionPoint,             // Point of interaction
+            InteractionNormal             // Normal at interaction point
+        );
     }
+}
+
+bool APlayerCharacter::IsActorInteractable(AActor* Actor) const
+{
+    if (!Actor)
+        return false;
+
+    return Actor->GetClass()->ImplementsInterface(UInteractableInterface::StaticClass()) ||
+           Actor->ActorHasTag(TEXT("Interactable"));
+}
+
+FVector APlayerCharacter::GetInteractionTraceStart() const
+{
+    if (CurrentCameraMode == ECameraMode::FirstPerson)
+    {
+        return FirstPersonCamera ? FirstPersonCamera->GetComponentLocation() : GetActorLocation() + FVector(0, 0, 50);
+    }
+    else
+    {
+        return ThirdPersonCamera ? ThirdPersonCamera->GetComponentLocation() : GetActorLocation() + FVector(0, 0, 100);
+    }
+}
+
+FVector APlayerCharacter::GetInteractionTraceDirection() const
+{
+    if (Controller)
+    {
+        return Controller->GetControlRotation().Vector();
+    }
+    
+    return GetActorForwardVector();
+}
+
+float APlayerCharacter::CalculateEffectiveInteractionDistance() const
+{
+    float Distance = BaseInteractionDistance;
+    
+    if (CurrentCameraMode == ECameraMode::ThirdPerson && ThirdPersonCameraBoom)
+    {
+        Distance += ThirdPersonCameraBoom->TargetArmLength;
+    }
+    
+    return Distance;
 }
 
 // === SETTINGS ===
+
+void APlayerCharacter::InitializePlayerComponents()
+{
+    if (FirstPersonCamera && GetMesh())
+    {
+        if (GetMesh()->DoesSocketExist(TEXT("head")))
+        {
+            FirstPersonCamera->AttachToComponent(GetMesh(), 
+                FAttachmentTransformRules::SnapToTargetIncludingScale, TEXT("head"));
+        }
+        else
+        {
+            FirstPersonCamera->SetRelativeLocation(FirstPersonCameraOffset);
+        }
+    }
+}
 
 void APlayerCharacter::SetMouseSensitivity(float NewSensitivity)
 {
@@ -637,76 +615,4 @@ void APlayerCharacter::SetGamepadSensitivity(float NewSensitivity)
 void APlayerCharacter::SetInvertMouseY(bool bInvert)
 {
     bInvertMouseY = bInvert;
-}
-
-void APlayerCharacter::HandleMoveInput(const FInputActionValue& Value)
-{
-    // Extract movement vector from input
-    FVector2D MovementVector = Value.Get<FVector2D>();
-    
-    // Use existing movement function
-    MoveCharacter(MovementVector);
-}
-
-void APlayerCharacter::HandleLookInput(const FVector2D& LookInput)
-{
-    // Add controller yaw and pitch input
-    if (!FMath::IsNearlyZero(LookInput.X))
-    {
-        AddControllerYawInput(LookInput.X);
-    }
-    
-    if (!FMath::IsNearlyZero(LookInput.Y))
-    {
-        AddControllerPitchInput(LookInput.Y);
-    }
-}
-
-void APlayerCharacter::TryInteract()
-{
-    // Use existing interaction function
-    InteractWithTarget();
-}
-
-void APlayerCharacter::HandleZoomInput(const FInputActionValue& Value)
-{
-    // Get scroll value
-    float ScrollValue = Value.Get<float>();
-    
-    // Only handle zoom in third person mode
-    if (CurrentCameraMode == ECameraMode::ThirdPerson)
-    {
-        // Toggle zoom based on scroll direction
-        if (FMath::Abs(ScrollValue) > 0.1f)
-        {
-            ToggleThirdPersonZoom();
-        }
-    }
-}
-
-void APlayerCharacter::StartSprinting()
-{
-    // Use existing sprint function
-    StartSprint();
-}
-
-void APlayerCharacter::StopSprinting()
-{
-    // Use existing sprint function
-    StopSprint();
-}
-
-bool APlayerCharacter::CanSprint() const
-{
-    UStaminaComponent* StaminaComp = GetStaminaComponent();
-    if (!StaminaComp)
-        return false;
-    
-    // Check if we have enough stamina and aren't exhausted
-    return StaminaComp->GetStaminaPercent() >= 0.2f && !StaminaComp->IsExhausted();
-}
-
-bool APlayerCharacter::IsSprinting() const
-{
-    return bIsSprinting;
 }

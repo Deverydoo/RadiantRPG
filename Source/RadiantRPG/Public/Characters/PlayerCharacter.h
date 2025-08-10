@@ -1,12 +1,12 @@
 // Public/Characters/PlayerCharacter.h
-// Updated player character header with improved camera positioning and interaction tracing
+// Fixed player character header with sprint speed variables
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Characters/BaseCharacter.h"
 #include "InputActionValue.h"
-#include "Engine/EngineTypes.h" // For collision enums
+#include "Engine/EngineTypes.h"
 #include "PlayerCharacter.generated.h"
 
 // Forward declarations
@@ -32,17 +32,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCameraModeChanged, ECameraMode, N
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInteractableDetected, AActor*, InteractableActor, bool, bIsInRange);
 
 /**
- * PlayerCharacter - Player-specific character class with improved camera and interaction systems
+ * PlayerCharacter - Player-specific character class
  * 
  * Responsibilities:
- * - Camera management (first/third person switching, zoom) with over-the-shoulder positioning
- * - Movement execution (receives processed input from controller)
- * - Interaction detection and tracing with camera distance compensation
+ * - Camera management (first/third person switching, zoom)
+ * - Movement execution with sprint support
+ * - Interaction detection and tracing
  * - Player-specific UI integration
- * - Camera-based world interaction with proper third-person support
  * 
- * Note: This class handles movement/action EXECUTION only.
- * Input processing is handled by RadiantPlayerController.
+ * Note: Input processing is handled by RadiantPlayerController
  */
 UCLASS(Blueprintable)
 class RADIANTRPG_API APlayerCharacter : public ABaseCharacter
@@ -56,107 +54,105 @@ protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
 
-    // NOTE: SetupPlayerInputComponent removed - handled by PlayerController
-
     // === CAMERA COMPONENTS ===
     
-    /** Third person camera boom (positioned to the right for over-the-shoulder view) */
+    /** Third person camera boom positioning the camera behind the character */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
-    class USpringArmComponent* ThirdPersonCameraBoom;
+    USpringArmComponent* ThirdPersonCameraBoom;
 
-    /** Third person camera */
+    /** Third person follow camera */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
-    class UCameraComponent* ThirdPersonCamera;
+    UCameraComponent* ThirdPersonCamera;
 
     /** First person camera */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
-    class UCameraComponent* FirstPersonCamera;
+    UCameraComponent* FirstPersonCamera;
 
     // === CAMERA SETTINGS ===
     
     /** Current camera mode */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+    UPROPERTY(BlueprintReadOnly, Category = "Camera")
     ECameraMode CurrentCameraMode;
 
-    /** Current zoom level for third person */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+    /** Current third person zoom level */
+    UPROPERTY(BlueprintReadOnly, Category = "Camera")
     EThirdPersonZoom CurrentZoomLevel;
 
     /** Camera transition speed */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0.1", ClampMax = "10.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Settings")
     float CameraTransitionSpeed;
 
-    /** Third person close distance */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "100.0", ClampMax = "800.0"))
-    float ThirdPersonCloseDistance;
+    /** Third person camera distances */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Settings")
+    float CloseZoomDistance;
 
-    /** Third person far distance */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "200.0", ClampMax = "1200.0"))
-    float ThirdPersonFarDistance;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Settings")
+    float FarZoomDistance;
 
-    /** Camera lag speed for third person */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0.1", ClampMax = "10.0"))
-    float ThirdPersonCameraLag;
+    /** Third person camera offsets */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Settings")
+    FVector CloseZoomOffset;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Settings")
+    FVector FarZoomOffset;
 
     /** First person camera offset from head socket */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Settings")
     FVector FirstPersonCameraOffset;
 
-    // === MOVEMENT SETTINGS ===
+    // === INPUT SETTINGS ===
     
-    /** Mouse sensitivity */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+    /** Mouse look sensitivity */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input Settings", meta = (ClampMin = "0.1", ClampMax = "5.0"))
     float MouseSensitivity;
 
-    /** Gamepad sensitivity */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+    /** Gamepad look sensitivity */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input Settings", meta = (ClampMin = "0.1", ClampMax = "5.0"))
     float GamepadSensitivity;
 
-    /** Whether to invert mouse Y axis */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
+    /** Invert mouse Y axis */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input Settings")
     bool bInvertMouseY;
 
-    /** Whether to use tank controls (like Oblivion) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
+    /** Use tank-style controls (Oblivion-style) instead of strafe controls */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input Settings")
     bool bUseTankControls;
 
     /** Rotation speed for tank controls */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input Settings")
     float RotationSpeed;
 
     // === INTERACTION SETTINGS ===
     
-    /** Base interaction distance (compensated for camera distance in third person) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction", meta = (ClampMin = "50.0", ClampMax = "500.0"))
+    /** Base interaction distance */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
     float BaseInteractionDistance;
 
-    /** Interaction trace sphere radius */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction", meta = (ClampMin = "5.0", ClampMax = "50.0"))
+    /** Interaction sphere trace radius */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
     float InteractionSphereRadius;
 
-    /** Collision channel for interaction traces - using custom Interaction channel */
+    /** Collision channel for interaction traces */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
     TEnumAsByte<ECollisionChannel> InteractionChannel;
 
-    /** Currently focused interactable */
+    /** Currently focused interactable actor */
     UPROPERTY(BlueprintReadOnly, Category = "Interaction")
     AActor* CurrentInteractable;
 
-    /** Current interaction point in world space */
-    UPROPERTY(BlueprintReadOnly, Category = "Interaction")
-    FVector CurrentInteractionPoint;
-
-    /** Current interaction surface normal */
-    UPROPERTY(BlueprintReadOnly, Category = "Interaction")
-    FVector CurrentInteractionNormal;
-
-    // === DEBUG SETTINGS ===
-    
     /** Show interaction debug visualization */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
     bool bShowInteractionDebug;
 
-    // === MOVEMENT STATE ===
+    // === MOVEMENT SETTINGS ===
+    
+    /** Normal walking speed */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "100", ClampMax = "600"))
+    float NormalSpeed;
+
+    /** Sprint speed */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "300", ClampMax = "1200"))
+    float SprintSpeed;
     
     /** Whether player is currently trying to sprint */
     UPROPERTY(BlueprintReadOnly, Category = "Movement")
@@ -229,7 +225,7 @@ public:
 
     // === INTERACTION INTERFACE ===
     
-    /** Get current effective interaction distance (compensated for camera mode) */
+    /** Get current effective interaction distance */
     UFUNCTION(BlueprintPure, Category = "Interaction")
     float GetEffectiveInteractionDistance() const { return CalculateEffectiveInteractionDistance(); }
 
@@ -252,14 +248,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Settings")
     void SetInvertMouseY(bool bInvert);
 
+    // === INPUT HANDLING ===
+    
+    /** Handle movement input from controller */
     UFUNCTION(BlueprintCallable, Category = "Input")
     void HandleMoveInput(const FInputActionValue& Value);
 
-    /** Handle look input from controller (with sensitivity already applied) */
+    /** Handle look input from controller */
     UFUNCTION(BlueprintCallable, Category = "Input")
     void HandleLookInput(const FVector2D& LookInput);
 
-    /** Try to interact with current target (alternative name for existing function) */
+    /** Try to interact with current target */
     UFUNCTION(BlueprintCallable, Category = "Input")
     void TryInteract();
 
@@ -267,11 +266,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Input")
     void HandleZoomInput(const FInputActionValue& Value);
 
-    /** Start sprinting (wrapper for existing StartSprint) */
+    /** Start sprinting (wrapper for controller) */
     UFUNCTION(BlueprintCallable, Category = "Movement")
     void StartSprinting();
 
-    /** Stop sprinting (wrapper for existing StopSprint) */
+    /** Stop sprinting (wrapper for controller) */
     UFUNCTION(BlueprintCallable, Category = "Movement")
     void StopSprinting();
 
@@ -294,7 +293,6 @@ protected:
 
     /** Update sprint state based on stamina */
     void UpdateSprintState();
-    void LogActiveStaminaActivities() const;
 
     // === CAMERA MANAGEMENT ===
     
@@ -306,16 +304,16 @@ protected:
 
     // === INTERACTION DETECTION ===
     
-    /** Update interaction detection - called every tick with camera distance compensation */
+    /** Update interaction detection - called every tick */
     void UpdateInteractionDetection();
 
-    /** Calculate effective interaction distance based on camera mode and position */
+    /** Calculate effective interaction distance based on camera mode */
     float CalculateEffectiveInteractionDistance() const;
 
-    /** Get trace start position based on camera mode with proper offset compensation */
+    /** Get trace start position based on camera mode */
     FVector GetInteractionTraceStart() const;
 
-    /** Get trace direction based on camera mode with crosshair alignment */
+    /** Get trace direction based on camera mode */
     FVector GetInteractionTraceDirection() const;
 
     /** Process hit result from interaction trace */
@@ -328,8 +326,6 @@ protected:
     
     /** Initialize player-specific components */
     virtual void InitializePlayerComponents();
-
-    
 
 private:
     // === CACHED VALUES FOR PERFORMANCE ===
@@ -345,10 +341,4 @@ private:
 
     /** Whether camera is currently transitioning */
     bool bIsTransitioningCamera;
-
-    // === DEBUG CONSOLE VARIABLES ===
-    #if WITH_EDITOR
-    /** Console variable for interaction debug visualization */
-    static class IConsoleVariable* CVarDebugInteraction;
-    #endif
 };

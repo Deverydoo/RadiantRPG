@@ -7,10 +7,42 @@
 #include "Engine/DataTable.h"
 #include "EventTypes.generated.h"
 
-DECLARE_LOG_CATEGORY_EXTERN(LogEventSystem, Log, All);
+/**
+ * Event categories for world simulation
+ */
+UENUM(BlueprintType)
+enum class EEventCategory : uint8
+{
+    System      UMETA(DisplayName = "System"),
+    Combat      UMETA(DisplayName = "Combat"),
+    Social      UMETA(DisplayName = "Social"),
+    Economic    UMETA(DisplayName = "Economic"),
+    Environmental UMETA(DisplayName = "Environmental"),
+    Faction     UMETA(DisplayName = "Faction"),
+    Discovery   UMETA(DisplayName = "Discovery"),
+    Quest		UMETA(DisplayName = "Quest"),
+    AI          UMETA(DisplayName = "AI"),
+    Resource    UMETA(DisplayName = "Resource"),
+    Weather     UMETA(DisplayName = "Weather"),
+    Time        UMETA(DisplayName = "Time")
+};
 
 /**
- * Priority levels for event processing
+ * Event scope - determines how far an event propagates
+ */
+UENUM(BlueprintType)
+enum class EEventScope : uint8
+{
+    Local       UMETA(DisplayName = "Local"),        // Within immediate area
+    Zone        UMETA(DisplayName = "Zone"),         // Entire zone/region
+    Global      UMETA(DisplayName = "Global"),       // Entire world
+    Faction     UMETA(DisplayName = "Faction"),      // All faction members
+    Regional    UMETA(DisplayName = "Regional"),      // World region.
+    Network     UMETA(DisplayName = "Network")       // Connected entities
+};
+
+/**
+ * Event priority for processing order
  */
 UENUM(BlueprintType)
 enum class EEventPriority : uint8
@@ -19,52 +51,6 @@ enum class EEventPriority : uint8
     Normal      UMETA(DisplayName = "Normal"),
     High        UMETA(DisplayName = "High"),
     Critical    UMETA(DisplayName = "Critical")
-};
-
-/**
- * Event scope determines propagation range
- */
-UENUM(BlueprintType)
-enum class EEventScope : uint8
-{
-    Local       UMETA(DisplayName = "Local"),      // Only immediate area
-    Zone        UMETA(DisplayName = "Zone"),       // Current zone
-    Regional    UMETA(DisplayName = "Regional"),   // Multiple zones
-    Global      UMETA(DisplayName = "Global")      // Entire world
-};
-
-/**
- * Event categories for filtering and subscription
- */
-UENUM(BlueprintType)
-enum class EEventCategory : uint8
-{
-    Combat          UMETA(DisplayName = "Combat"),
-    Social          UMETA(DisplayName = "Social"),
-    Environmental   UMETA(DisplayName = "Environmental"),
-    Economic        UMETA(DisplayName = "Economic"),
-    Faction         UMETA(DisplayName = "Faction"),
-    Discovery       UMETA(DisplayName = "Discovery"),
-    Quest           UMETA(DisplayName = "Quest"),
-    Resource        UMETA(DisplayName = "Resource"),
-    AI              UMETA(DisplayName = "AI"),
-    System          UMETA(DisplayName = "System")
-};
-
-/**
- * Event stimulus type for AI brain processing
- */
-UENUM(BlueprintType)
-enum class EStimulusType : uint8
-{
-    Visual      UMETA(DisplayName = "Visual"),
-    Auditory    UMETA(DisplayName = "Auditory"),
-    Touch       UMETA(DisplayName = "Touch"),
-    Chemical    UMETA(DisplayName = "Chemical"),    // Smell/taste
-    Internal    UMETA(DisplayName = "Internal"),    // Hunger, fatigue, etc
-    Social      UMETA(DisplayName = "Social"),
-    Danger      UMETA(DisplayName = "Danger"),
-    Opportunity UMETA(DisplayName = "Opportunity")
 };
 
 /**
@@ -116,10 +102,6 @@ struct FWorldEvent
         Timestamp = 0.0f;
     }
 };
-
-/**
- * Stimulus data for AI brain processing
- */
 
 
 /**

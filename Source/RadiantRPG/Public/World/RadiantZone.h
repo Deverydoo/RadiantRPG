@@ -11,8 +11,8 @@
 
 class UBoxComponent;
 class USphereComponent;
+class UAudioComponent;
 class UWorldEventManager;
-
 
 /**
  * Represents a zone in the world with its own rules and events
@@ -120,12 +120,22 @@ public:
     UFUNCTION(BlueprintPure, Category = "Zone")
     bool IsZoneActive() const { return bIsActive; }
 
+    // Audio Management
+    UFUNCTION(BlueprintCallable, Category = "Zone|Audio")
+    void PlayAmbientSound();
+
+    UFUNCTION(BlueprintCallable, Category = "Zone|Audio")
+    void StopAmbientSound();
+
+    UFUNCTION(BlueprintCallable, Category = "Zone|Audio")
+    void UpdateAmbientSound();
+
     // Blueprint Events
     UFUNCTION(BlueprintImplementableEvent, Category = "Zone")
-    void OnZoneEntered(AActor* Actor);
+    void OnZoneEntered(AActor* EnteredActor);
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Zone")
-    void OnZoneExited(AActor* Actor);
+    void OnZoneExited(AActor* ExitedActor);
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Zone")
     void OnWeatherChanged(EZoneWeather NewWeather);
@@ -133,26 +143,22 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category = "Zone")
     void OnFactionControlChanged(FGameplayTag NewFaction);
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Zone")
-    void OnZoneEventTriggered(const FWorldEvent& Event);
-
 protected:
-    // Overlap Events
+    // Overlap handlers
     UFUNCTION()
     void OnZoneBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
-        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, 
-        const FHitResult& SweepResult);
+        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
     UFUNCTION()
     void OnZoneEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
         UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
-    // Internal Functions
+    // Internal update functions
     void UpdateWeather();
     void UpdateResources();
     void ProcessZoneEvents();
     void CheckFactionStatus();
-    void UpdateDiscoverySound();
+    void HandlePlayerEntry(AActor* Player);
 
 private:
     // Components
@@ -162,7 +168,16 @@ private:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
     USphereComponent* ZoneInfluence;
 
-    // Zone Identity
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+    UAudioComponent* AmbientAudioComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+    UAudioComponent* WeatherAudioComponent;
+
+    // Zone Configuration
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Config", meta = (AllowPrivateAccess = "true"))
+    FString ZoneName = "Unnamed Zone";
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Config", meta = (AllowPrivateAccess = "true"))
     FGameplayTag ZoneTag;
 
@@ -170,15 +185,15 @@ private:
     EZoneType ZoneType = EZoneType::Wilderness;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Config", meta = (AllowPrivateAccess = "true"))
-    FString ZoneName = "Unnamed Zone";
+    EZoneDanger DangerLevel = EZoneDanger::Low;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Config", meta = (AllowPrivateAccess = "true"))
-    FText ZoneDescription;
-
-    // Zone State
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone State", meta = (AllowPrivateAccess = "true"))
     bool bIsActive = true;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Config", meta = (AllowPrivateAccess = "true"))
+    bool bAutoActivateOnBeginPlay = true;
+
+    // Zone State
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone State", meta = (AllowPrivateAccess = "true"))
     bool bIsDiscovered = false;
 
@@ -196,10 +211,10 @@ private:
     TArray<EZoneWeather> PossibleWeatherTypes;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Weather", meta = (AllowPrivateAccess = "true"))
-    float WeatherChangeProbability = 0.1f;
+    float WeatherUpdateInterval = 300.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Weather", meta = (AllowPrivateAccess = "true"))
-    float WeatherUpdateInterval = 60.0f;
+    float WeatherChangeProbability = 0.3f;
 
     // Faction
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Faction", meta = (AllowPrivateAccess = "true"))
@@ -212,7 +227,7 @@ private:
     float FactionControlStrength = 1.0f;
 
     // Resources
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Resources", meta = (AllowPrivateAccess = "true"))
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone Resources", meta = (AllowPrivateAccess = "true"))
     TMap<FGameplayTag, float> ResourceAvailability;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Resources", meta = (AllowPrivateAccess = "true"))
@@ -244,12 +259,21 @@ private:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Zone Spawning", meta = (AllowPrivateAccess = "true"))
     TArray<AActor*> SpawnedNPCs;
 
-    // Sounds
+    // Audio
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Audio", meta = (AllowPrivateAccess = "true"))
     USoundBase* DiscoverySound;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Audio", meta = (AllowPrivateAccess = "true"))
     USoundBase* AmbientSound;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Audio", meta = (AllowPrivateAccess = "true"))
+    float AmbientSoundVolume = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Audio", meta = (AllowPrivateAccess = "true"))
+    float AmbientSoundFadeInTime = 2.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Audio", meta = (AllowPrivateAccess = "true"))
+    float AmbientSoundFadeOutTime = 2.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone Audio", meta = (AllowPrivateAccess = "true"))
     TMap<EZoneWeather, USoundBase*> WeatherSounds;
@@ -259,12 +283,7 @@ private:
     UWorldEventManager* EventManager = nullptr;
 
     // Timers
-    UPROPERTY()
     FTimerHandle WeatherUpdateTimer;
-
-    UPROPERTY()
     FTimerHandle ResourceUpdateTimer;
-
-    UPROPERTY()
     FTimerHandle EventProcessTimer;
 };

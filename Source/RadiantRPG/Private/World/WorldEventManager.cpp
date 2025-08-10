@@ -9,13 +9,11 @@
 #include "Kismet/GameplayStatics.h"
 #include "CollisionQueryParams.h"
 
-DEFINE_LOG_CATEGORY(LogEventSystem);
-
 void UWorldEventManager::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
     
-    UE_LOG(LogEventSystem, Log, TEXT("WorldEventManager initialized"));
+    UE_LOG(LogTemp, Log, TEXT("WorldEventManager initialized"));
 }
 
 void UWorldEventManager::Deinitialize()
@@ -46,7 +44,7 @@ void UWorldEventManager::OnWorldBeginPlay(UWorld& InWorld)
         true
     );
     
-    UE_LOG(LogEventSystem, Log, TEXT("WorldEventManager started update timer"));
+    UE_LOG(LogTemp, Log, TEXT("WorldEventManager started update timer"));
 }
 
 bool UWorldEventManager::ShouldCreateSubsystem(UObject* Outer) const
@@ -106,7 +104,7 @@ void UWorldEventManager::BroadcastEvent(const FWorldEvent& Event)
     OnEventBroadcast.Broadcast(ProcessedEvent);
     OnEventBroadcastBP.Broadcast(ProcessedEvent);
     
-    UE_LOG(LogEventSystem, Verbose, TEXT("Broadcasted event: %s at %s with scope %d"),
+    UE_LOG(LogTemp, Verbose, TEXT("Broadcasted event: %s at %s with scope %d"),
         *ProcessedEvent.EventTag.ToString(),
         *ProcessedEvent.Location.ToString(),
         (int32)ProcessedEvent.Scope);
@@ -253,7 +251,7 @@ void UWorldEventManager::RegisterListener(UEventListenerComponent* Listener)
     if (Listener && !RegisteredListeners.Contains(Listener))
     {
         RegisteredListeners.Add(Listener);
-        UE_LOG(LogEventSystem, Verbose, TEXT("Registered event listener: %s"), 
+        UE_LOG(LogTemp, Verbose, TEXT("Registered event listener: %s"), 
             *GetNameSafe(Listener->GetOwner()));
     }
 }
@@ -271,7 +269,7 @@ void UWorldEventManager::RegisterZone(ARadiantZone* Zone)
     if (Zone && !RegisteredZones.Contains(Zone))
     {
         RegisteredZones.Add(Zone);
-        UE_LOG(LogEventSystem, Log, TEXT("Registered zone: %s"), *Zone->GetName());
+        UE_LOG(LogTemp, Log, TEXT("Registered zone: %s"), *Zone->GetName());
     }
 }
 

@@ -4,40 +4,38 @@
 #include "Components/NeedsComponent.h"
 #include "Characters/BaseCharacter.h"
 #include "Engine/World.h"
+#include "Types/ARPG_AITypes.h"
+#include "RadiantRPG.h"
 
 UNeedsComponent::UNeedsComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
     PrimaryComponentTick.bStartWithTickEnabled = true;
-    // Slow tick rate for needs - they change gradually
     PrimaryComponentTick.TickInterval = 1.0f; // Update every second
 
-    // Initialize settings
     bNeedsActive = true;
     GlobalDecayMultiplier = 1.0f;
     OwnerCharacter = nullptr;
+    LastLogTime = 0.0f;
 }
 
 void UNeedsComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Cache owner reference
     OwnerCharacter = Cast<ABaseCharacter>(GetOwner());
     
-    // Initialize default needs if none are set
     if (Needs.Num() == 0)
     {
         InitializeDefaultNeeds();
     }
 
-    // Initialize critical status for all needs
     for (auto& NeedPair : Needs)
     {
         UpdateNeedCriticalStatus(NeedPair.Key);
     }
 
-    UE_LOG(LogTemp, Log, TEXT("NeedsComponent initialized for %s with %d needs"), 
+    UE_LOG(LogRadiantRPG, Log, TEXT("NeedsComponent initialized for %s with %d needs"), 
            OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"), 
            Needs.Num());
 }
@@ -54,17 +52,14 @@ void UNeedsComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 
 void UNeedsComponent::InitializeDefaultNeeds()
 {
-    // Add basic needs that most characters should have
-    // Timing calculations: 1.0 / DecayRate = seconds to go from 1.0 to 0.0
+    AddNeed(EARPG_NeedType::Hunger, 0.8f, 0.0008f);    // ~21 minutes to starve
+    AddNeed(EARPG_NeedType::Fatigue, 1.0f, 0.0003f);   // ~55 minutes to exhaustion
+    AddNeed(EARPG_NeedType::Safety, 0.7f, 0.0001f);    // ~2.8 hours to fear
+    AddNeed(EARPG_NeedType::Social, 0.6f, 0.0002f);    // ~83 minutes to loneliness
+    AddNeed(EARPG_NeedType::Comfort, 0.5f, 0.00005f);  // ~5.5 hours to discomfort
+    AddNeed(EARPG_NeedType::Curiosity, 0.4f, 0.0001f); // ~2.8 hours to boredom
     
-    AddNeed(ENeedType::Hunger, 0.8f, 0.0008f);    // ~21 minutes to starve
-    AddNeed(ENeedType::Thirst, 0.9f, 0.001f);     // ~17 minutes to dehydrate
-    AddNeed(ENeedType::Sleep, 1.0f, 0.0003f);     // ~55 minutes to exhaustion
-    AddNeed(ENeedType::Safety, 0.7f, 0.0001f);    // ~2.8 hours to fear
-    AddNeed(ENeedType::Social, 0.6f, 0.0002f);    // ~83 minutes to loneliness
-    AddNeed(ENeedType::Comfort, 0.5f, 0.00005f);  // ~5.5 hours to discomfort
-    
-    UE_LOG(LogTemp, Log, TEXT("NeedsComponent: Initialized default needs"));
+    UE_LOG(LogRadiantRPG, Log, TEXT("NeedsComponent: Initialized default needs"));
 }
 
 void UNeedsComponent::UpdateNeeds(float DeltaTime)
@@ -74,19 +69,16 @@ void UNeedsComponent::UpdateNeeds(float DeltaTime)
 
     for (auto& NeedPair : Needs)
     {
-        FNeedData& Need = NeedPair.Value;
+        FARPG_AINeed& Need = NeedPair.Value;
         
         if (!Need.bIsActive)
             continue;
 
-        // Calculate decay for this tick
         float DecayAmount = Need.DecayRate * GlobalDecayMultiplier * DeltaTime;
         float PreviousLevel = Need.CurrentLevel;
         
-        // Apply decay
         Need.CurrentLevel = FMath::Clamp(Need.CurrentLevel - DecayAmount, 0.0f, 1.0f);
         
-        // Check if need level changed significantly
         if (FMath::Abs(Need.CurrentLevel - PreviousLevel) > 0.001f)
         {
             UpdateNeedCriticalStatus(NeedPair.Key);
@@ -94,57 +86,56 @@ void UNeedsComponent::UpdateNeeds(float DeltaTime)
             bAnyNeedChanged = true;
         }
 
-        // Count critical needs
         if (Need.bIsCritical)
         {
             CriticalCount++;
         }
     }
 
-    // Log periodically for debugging (only when needs change)
-    if (bAnyNeedChanged)
+    LogNeedsUpdate(bAnyNeedChanged, CriticalCount);
+}
+
+void UNeedsComponent::LogNeedsUpdate(bool bAnyNeedChanged, int32 CriticalCount)
+{
+    if (!bAnyNeedChanged)
+        return;
+
+    float CurrentTime = GetWorld()->GetTimeSeconds();
+    float LogInterval = CriticalCount > 0 ? 10.0f : 60.0f;
+    
+    if (CurrentTime - LastLogTime > LogInterval)
     {
-        static float LastLogTime = 0.0f;
-        float CurrentTime = GetWorld()->GetTimeSeconds();
+        LastLogTime = CurrentTime;
         
-        // More frequent logging if there are critical needs
-        float LogInterval = CriticalCount > 0 ? 10.0f : 60.0f;
-        
-        if (CurrentTime - LastLogTime > LogInterval)
+        if (CriticalCount > 0)
         {
-            LastLogTime = CurrentTime;
-            
-            if (CriticalCount > 0)
-            {
-                UE_LOG(LogTemp, Warning, TEXT("%s has %d critical needs"), 
-                       OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
-                       CriticalCount);
-            }
-            else
-            {
-                UE_LOG(LogTemp, Verbose, TEXT("%s needs updated - all stable"), 
-                       OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"));
-            }
+            UE_LOG(LogRadiantRPG, Warning, TEXT("%s has %d critical needs"), 
+                   OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
+                   CriticalCount);
+        }
+        else
+        {
+            UE_LOG(LogRadiantRPG, Verbose, TEXT("%s needs updated - all stable"), 
+                   OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"));
         }
     }
 }
 
-void UNeedsComponent::UpdateNeedCriticalStatus(ENeedType NeedType)
+void UNeedsComponent::UpdateNeedCriticalStatus(EARPG_NeedType NeedType)
 {
-    FNeedData* Need = Needs.Find(NeedType);
+    FARPG_AINeed* Need = Needs.Find(NeedType);
     if (!Need)
         return;
 
     bool bWasCritical = Need->bIsCritical;
     Need->bIsCritical = Need->CurrentLevel <= Need->CriticalThreshold;
 
-    // Broadcast events on critical status change
     if (!bWasCritical && Need->bIsCritical)
     {
         OnNeedCritical.Broadcast(NeedType);
         OnNeedCriticalBP(NeedType);
         
-        UE_LOG(LogTemp, Warning, TEXT("%s need '%s' became CRITICAL (%.1f%%)"), 
+        UE_LOG(LogRadiantRPG, Warning, TEXT("%s need '%s' became CRITICAL (%.1f%%)"), 
                OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
                *UEnum::GetValueAsString(NeedType), 
                Need->CurrentLevel * 100.0f);
@@ -154,31 +145,31 @@ void UNeedsComponent::UpdateNeedCriticalStatus(ENeedType NeedType)
         OnNeedSatisfied.Broadcast(NeedType);
         OnNeedSatisfiedBP(NeedType);
         
-        UE_LOG(LogTemp, Log, TEXT("%s need '%s' no longer critical (%.1f%%)"), 
+        UE_LOG(LogRadiantRPG, Log, TEXT("%s need '%s' no longer critical (%.1f%%)"), 
                OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
                *UEnum::GetValueAsString(NeedType), 
                Need->CurrentLevel * 100.0f);
     }
 }
 
-void UNeedsComponent::BroadcastNeedChanged(ENeedType NeedType, float NewLevel)
+void UNeedsComponent::BroadcastNeedChanged(EARPG_NeedType NeedType, float NewLevel)
 {
     OnNeedChanged.Broadcast(NeedType, NewLevel);
     OnNeedChangedBP(NeedType, NewLevel);
 }
 
-float UNeedsComponent::GetNeedLevel(ENeedType NeedType) const
+float UNeedsComponent::GetNeedLevel(EARPG_NeedType NeedType) const
 {
-    const FNeedData* Need = Needs.Find(NeedType);
+    const FARPG_AINeed* Need = Needs.Find(NeedType);
     return Need ? Need->CurrentLevel : 0.0f;
 }
 
-void UNeedsComponent::SetNeedLevel(ENeedType NeedType, float NewLevel)
+void UNeedsComponent::SetNeedLevel(EARPG_NeedType NeedType, float NewLevel)
 {
-    FNeedData* Need = Needs.Find(NeedType);
+    FARPG_AINeed* Need = Needs.Find(NeedType);
     if (!Need)
     {
-        UE_LOG(LogTemp, Warning, TEXT("SetNeedLevel: Need type %s not found"), 
+        UE_LOG(LogRadiantRPG, Warning, TEXT("SetNeedLevel: Need type %s not found"), 
                *UEnum::GetValueAsString(NeedType));
         return;
     }
@@ -191,19 +182,19 @@ void UNeedsComponent::SetNeedLevel(ENeedType NeedType, float NewLevel)
         UpdateNeedCriticalStatus(NeedType);
         BroadcastNeedChanged(NeedType, Need->CurrentLevel);
         
-        UE_LOG(LogTemp, Verbose, TEXT("%s need '%s' set to %.1f%% (was %.1f%%)"), 
+        UE_LOG(LogRadiantRPG, Verbose, TEXT("%s need '%s' set to %.1f%% (was %.1f%%)"), 
                OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
                *UEnum::GetValueAsString(NeedType),
                Need->CurrentLevel * 100.0f, PreviousLevel * 100.0f);
     }
 }
 
-void UNeedsComponent::ModifyNeedLevel(ENeedType NeedType, float Amount)
+void UNeedsComponent::ModifyNeedLevel(EARPG_NeedType NeedType, float Amount)
 {
-    FNeedData* Need = Needs.Find(NeedType);
+    FARPG_AINeed* Need = Needs.Find(NeedType);
     if (!Need)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ModifyNeedLevel: Need type %s not found"), 
+        UE_LOG(LogRadiantRPG, Warning, TEXT("ModifyNeedLevel: Need type %s not found"), 
                *UEnum::GetValueAsString(NeedType));
         return;
     }
@@ -212,15 +203,15 @@ void UNeedsComponent::ModifyNeedLevel(ENeedType NeedType, float Amount)
     SetNeedLevel(NeedType, NewLevel);
 }
 
-bool UNeedsComponent::IsNeedCritical(ENeedType NeedType) const
+bool UNeedsComponent::IsNeedCritical(EARPG_NeedType NeedType) const
 {
-    const FNeedData* Need = Needs.Find(NeedType);
+    const FARPG_AINeed* Need = Needs.Find(NeedType);
     return Need ? Need->bIsCritical : false;
 }
 
-TArray<ENeedType> UNeedsComponent::GetCriticalNeeds() const
+TArray<EARPG_NeedType> UNeedsComponent::GetCriticalNeeds() const
 {
-    TArray<ENeedType> CriticalNeeds;
+    TArray<EARPG_NeedType> CriticalNeeds;
     
     for (const auto& NeedPair : Needs)
     {
@@ -230,8 +221,7 @@ TArray<ENeedType> UNeedsComponent::GetCriticalNeeds() const
         }
     }
     
-    // Sort by urgency (lowest level first)
-    CriticalNeeds.Sort([this](const ENeedType& A, const ENeedType& B) {
+    CriticalNeeds.Sort([this](const EARPG_NeedType& A, const EARPG_NeedType& B) {
         float LevelA = GetNeedLevel(A);
         float LevelB = GetNeedLevel(B);
         return LevelA < LevelB;
@@ -240,9 +230,9 @@ TArray<ENeedType> UNeedsComponent::GetCriticalNeeds() const
     return CriticalNeeds;
 }
 
-ENeedType UNeedsComponent::GetMostCriticalNeed() const
+EARPG_NeedType UNeedsComponent::GetMostCriticalNeed() const
 {
-    ENeedType MostCritical = ENeedType::Hunger; // Default fallback
+    EARPG_NeedType MostCritical = EARPG_NeedType::Hunger;
     float LowestLevel = 1.0f;
     bool bFoundAnyActiveNeed = false;
     
@@ -258,7 +248,7 @@ ENeedType UNeedsComponent::GetMostCriticalNeed() const
     
     if (!bFoundAnyActiveNeed)
     {
-        UE_LOG(LogTemp, Warning, TEXT("GetMostCriticalNeed: No active needs found"));
+        UE_LOG(LogRadiantRPG, Warning, TEXT("GetMostCriticalNeed: No active needs found"));
     }
     
     return MostCritical;
@@ -277,12 +267,12 @@ bool UNeedsComponent::HasCriticalNeeds() const
     return false;
 }
 
-void UNeedsComponent::SatisfyNeed(ENeedType NeedType)
+void UNeedsComponent::SatisfyNeed(EARPG_NeedType NeedType)
 {
     float PreviousLevel = GetNeedLevel(NeedType);
     SetNeedLevel(NeedType, 1.0f);
     
-    UE_LOG(LogTemp, Log, TEXT("%s need '%s' satisfied (%.1f%% → 100%%)"), 
+    UE_LOG(LogRadiantRPG, Log, TEXT("%s need '%s' satisfied (%.1f%% → 100%%)"), 
            OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
            *UEnum::GetValueAsString(NeedType),
            PreviousLevel * 100.0f);
@@ -303,7 +293,7 @@ void UNeedsComponent::SatisfyAllNeeds()
         }
     }
     
-    UE_LOG(LogTemp, Log, TEXT("%s satisfied %d needs"), 
+    UE_LOG(LogRadiantRPG, Log, TEXT("%s satisfied %d needs"), 
            OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
            SatisfiedCount);
 }
@@ -315,11 +305,10 @@ void UNeedsComponent::SetNeedsActive(bool bActive)
 
     bNeedsActive = bActive;
     
-    UE_LOG(LogTemp, Log, TEXT("%s needs system %s"), 
+    UE_LOG(LogRadiantRPG, Log, TEXT("%s needs system %s"), 
            OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
            bNeedsActive ? TEXT("ACTIVATED") : TEXT("DEACTIVATED"));
 
-    // If reactivating, update all need statuses
     if (bNeedsActive)
     {
         for (auto& NeedPair : Needs)
@@ -329,76 +318,86 @@ void UNeedsComponent::SetNeedsActive(bool bActive)
     }
 }
 
-void UNeedsComponent::AddNeed(ENeedType NeedType, float StartingLevel, float DecayRate)
+void UNeedsComponent::AddNeed(EARPG_NeedType NeedType, float StartingLevel, float DecayRate)
 {
-    // Check if need already exists
     if (Needs.Contains(NeedType))
     {
-        UE_LOG(LogTemp, Warning, TEXT("AddNeed: Need type %s already exists, updating instead"), 
+        UE_LOG(LogRadiantRPG, Warning, TEXT("AddNeed: Need type %s already exists, updating instead"), 
                *UEnum::GetValueAsString(NeedType));
         
-        FNeedData* ExistingNeed = Needs.Find(NeedType);
+        FARPG_AINeed* ExistingNeed = Needs.Find(NeedType);
         ExistingNeed->CurrentLevel = FMath::Clamp(StartingLevel, 0.0f, 1.0f);
         ExistingNeed->DecayRate = FMath::Max(0.0f, DecayRate);
         UpdateNeedCriticalStatus(NeedType);
         return;
     }
 
-    // Create new need
-    FNeedData NewNeed;
+    FARPG_AINeed NewNeed;
     NewNeed.NeedType = NeedType;
     NewNeed.CurrentLevel = FMath::Clamp(StartingLevel, 0.0f, 1.0f);
     NewNeed.DecayRate = FMath::Max(0.0f, DecayRate);
-    NewNeed.CriticalThreshold = 0.25f; // 25% threshold for most needs
-    NewNeed.bIsCritical = NewNeed.CurrentLevel <= NewNeed.CriticalThreshold;
     NewNeed.bIsActive = true;
     
-    // Special thresholds for specific needs
-    switch (NeedType)
-    {
-        case ENeedType::Hunger:
-        case ENeedType::Thirst:
-            NewNeed.CriticalThreshold = 0.15f; // More urgent
-            break;
-        case ENeedType::Sleep:
-            NewNeed.CriticalThreshold = 0.10f; // Very urgent when tired
-            break;
-        case ENeedType::Social:
-        case ENeedType::Comfort:
-            NewNeed.CriticalThreshold = 0.30f; // Less urgent
-            break;
-        default:
-            // Use default 0.25f
-            break;
-    }
+    // Set critical thresholds based on need type
+    SetCriticalThresholdForNeedType(NewNeed);
     
     NewNeed.bIsCritical = NewNeed.CurrentLevel <= NewNeed.CriticalThreshold;
     Needs.Add(NeedType, NewNeed);
     
-    // Calculate time to critical/empty for logging
-    float TimeToCritical = (NewNeed.CurrentLevel - NewNeed.CriticalThreshold) / NewNeed.DecayRate;
-    float TimeToEmpty = NewNeed.CurrentLevel / NewNeed.DecayRate;
+    LogNeedAddition(NeedType, NewNeed);
+}
+
+void UNeedsComponent::SetCriticalThresholdForNeedType(FARPG_AINeed& Need)
+{
+    switch (Need.NeedType)
+    {
+        case EARPG_NeedType::Hunger:
+            Need.CriticalThreshold = 0.15f; // More urgent
+            break;
+        case EARPG_NeedType::Fatigue:
+            Need.CriticalThreshold = 0.10f; // Very urgent when tired
+            break;
+        case EARPG_NeedType::Social:
+        case EARPG_NeedType::Comfort:
+            Need.CriticalThreshold = 0.30f; // Less urgent
+            break;
+        case EARPG_NeedType::Safety:
+            Need.CriticalThreshold = 0.20f; // Moderately urgent
+            break;
+        case EARPG_NeedType::Curiosity:
+            Need.CriticalThreshold = 0.25f; // Default
+            break;
+        default:
+            Need.CriticalThreshold = 0.25f; // Default
+            break;
+    }
+}
+
+void UNeedsComponent::LogNeedAddition(EARPG_NeedType NeedType, const FARPG_AINeed& Need)
+{
+    float TimeToCritical = (Need.CurrentLevel - Need.CriticalThreshold) / Need.DecayRate;
+    float TimeToEmpty = Need.CurrentLevel / Need.DecayRate;
     
-    UE_LOG(LogTemp, Log, TEXT("Added need '%s' to %s (Level: %.1f%%, Decay: %.5f/s, Critical in: %.1fm, Empty in: %.1fm)"), 
+    UE_LOG(LogRadiantRPG, Log, TEXT("Added need '%s' to %s (Level: %.1f%%, Decay: %.5f/s, Critical in: %.1fm, Empty in: %.1fm)"), 
            *UEnum::GetValueAsString(NeedType),
            OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"),
-           StartingLevel * 100.0f, 
-           DecayRate,
+           Need.CurrentLevel * 100.0f, 
+           Need.DecayRate,
            TimeToCritical / 60.0f,
            TimeToEmpty / 60.0f);
 }
 
-void UNeedsComponent::RemoveNeed(ENeedType NeedType)
+void UNeedsComponent::RemoveNeed(EARPG_NeedType NeedType)
 {
     if (Needs.Remove(NeedType) > 0)
     {
-        UE_LOG(LogTemp, Log, TEXT("Removed need '%s' from %s"), 
+        UE_LOG(LogRadiantRPG, Log, TEXT("Removed need '%s' from %s"), 
                *UEnum::GetValueAsString(NeedType),
                OwnerCharacter ? *OwnerCharacter->GetName() : TEXT("Unknown"));
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("RemoveNeed: Need type %s not found"), 
+        UE_LOG(LogRadiantRPG, Warning, TEXT("RemoveNeed: Need type %s not found"), 
                *UEnum::GetValueAsString(NeedType));
     }
 }

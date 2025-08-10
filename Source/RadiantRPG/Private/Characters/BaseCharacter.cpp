@@ -53,17 +53,17 @@ ABaseCharacter::ABaseCharacter()
     NeedsComponent = CreateDefaultSubobject<UNeedsComponent>(TEXT("NeedsComponent"));
 
     // For player characters, create all components in constructor for safety
+    // Create core components for ALL characters
+    StaminaComponent = CreateDefaultSubobject<UStaminaComponent>(TEXT("StaminaComponent"));
+    ManaComponent = CreateDefaultSubobject<UManaComponent>(TEXT("ManaComponent"));
+
+    // Skills component - only create for players
     if (CharacterType == ECharacterType::Player)
     {
-        StaminaComponent = CreateDefaultSubobject<UStaminaComponent>(TEXT("StaminaComponent"));
-        ManaComponent = CreateDefaultSubobject<UManaComponent>(TEXT("ManaComponent"));
         SkillsComponent = CreateDefaultSubobject<USkillsComponent>(TEXT("SkillsComponent"));
     }
     else
     {
-        // Initialize optional component pointers to null for NPCs
-        ManaComponent = nullptr;
-        StaminaComponent = nullptr;
         SkillsComponent = nullptr;
     }
 

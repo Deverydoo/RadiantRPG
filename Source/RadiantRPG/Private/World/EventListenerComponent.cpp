@@ -49,12 +49,12 @@ void UEventListenerComponent::BeginPlay()
                 }
             }
             
-            UE_LOG(LogEventSystem, Log, TEXT("EventListener registered for %s"), 
+            UE_LOG(LogTemp, Log, TEXT("EventListener registered for %s"), 
                 *GetNameSafe(GetOwner()));
         }
         else
         {
-            UE_LOG(LogEventSystem, Warning, TEXT("Failed to find WorldEventManager for %s"), 
+            UE_LOG(LogTemp, Warning, TEXT("Failed to find WorldEventManager for %s"), 
                 *GetNameSafe(GetOwner()));
         }
 
@@ -94,7 +94,7 @@ void UEventListenerComponent::OnEventReceived(const FWorldEvent& Event)
         return;
     }
 
-    UE_LOG(LogEventSystem, Verbose, TEXT("%s received event: %s"), 
+    UE_LOG(LogTemp, Verbose, TEXT("%s received event: %s"), 
         *GetNameSafe(GetOwner()), *Event.EventTag.ToString());
 
     // Process the event
@@ -136,7 +136,7 @@ void UEventListenerComponent::SubscribeToEvent(FGameplayTag EventTag, float MaxD
     
     Subscriptions.Add(Sub);
     
-    UE_LOG(LogEventSystem, Log, TEXT("%s subscribed to event: %s"), 
+    UE_LOG(LogTemp, Log, TEXT("%s subscribed to event: %s"), 
         *GetNameSafe(GetOwner()), *EventTag.ToString());
 }
 
@@ -150,7 +150,7 @@ void UEventListenerComponent::SubscribeToCategory(EEventCategory Category, float
     
     Subscriptions.Add(Sub);
     
-    UE_LOG(LogEventSystem, Log, TEXT("%s subscribed to category: %d"), 
+    UE_LOG(LogTemp, Log, TEXT("%s subscribed to category: %d"), 
         *GetNameSafe(GetOwner()), (int32)Category);
 }
 

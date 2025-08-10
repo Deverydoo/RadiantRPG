@@ -1,26 +1,25 @@
 // Public/Components/NeedsComponent.h
-// Basic needs system for characters (hunger, thirst, sleep, etc.)
+// Manages basic character needs system for RadiantRPG
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Engine/DataTable.h"
-#include "Types/RadiantAITypes.h"
+#include "Types/ARPG_AITypes.h"
 #include "NeedsComponent.generated.h"
 
 class ABaseCharacter;
 
-
 // Need-related events
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNeedChanged, ENeedType, NeedType, float, NewLevel);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNeedCritical, ENeedType, NeedType);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNeedSatisfied, ENeedType, NeedType);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNeedChanged, EARPG_NeedType, NeedType, float, NewLevel);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNeedCritical, EARPG_NeedType, NeedType);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNeedSatisfied, EARPG_NeedType, NeedType);
 
 /**
  * NeedsComponent - Manages basic character needs
  * 
- * Handles hunger, thirst, sleep, and other basic needs that drive NPC behavior
+ * Handles hunger, fatigue, safety, and other basic needs that drive NPC behavior
  * and can optionally affect player character as well.
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -37,7 +36,7 @@ protected:
 
     /** Map of all needs for this character */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Needs")
-    TMap<ENeedType, FNeedData> Needs;
+    TMap<EARPG_NeedType, FARPG_AINeed> Needs;
 
     /** Whether needs system is active for this character */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Needs")
@@ -51,6 +50,9 @@ protected:
     UPROPERTY()
     ABaseCharacter* OwnerCharacter;
 
+    /** Last time we logged needs update for throttling */
+    float LastLogTime;
+
 public:
     // === EVENTS ===
     UPROPERTY(BlueprintAssignable, Category = "Events")
@@ -62,79 +64,76 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Events")
     FOnNeedSatisfied OnNeedSatisfied;
 
-    // === PUBLIC INTERFACE ===
-    
-    /** Get current level of a specific need */
-    UFUNCTION(BlueprintPure, Category = "Needs")
-    float GetNeedLevel(ENeedType NeedType) const;
-
-    /** Set need level directly */
+    // === BLUEPRINT FUNCTIONS ===
     UFUNCTION(BlueprintCallable, Category = "Needs")
-    void SetNeedLevel(ENeedType NeedType, float NewLevel);
+    float GetNeedLevel(EARPG_NeedType NeedType) const;
 
-    /** Modify need level by an amount */
     UFUNCTION(BlueprintCallable, Category = "Needs")
-    void ModifyNeedLevel(ENeedType NeedType, float Amount);
+    void SetNeedLevel(EARPG_NeedType NeedType, float NewLevel);
 
-    /** Check if a need is critical */
-    UFUNCTION(BlueprintPure, Category = "Needs")
-    bool IsNeedCritical(ENeedType NeedType) const;
+    UFUNCTION(BlueprintCallable, Category = "Needs")
+    void ModifyNeedLevel(EARPG_NeedType NeedType, float Amount);
 
-    /** Get all critical needs */
-    UFUNCTION(BlueprintPure, Category = "Needs")
-    TArray<ENeedType> GetCriticalNeeds() const;
+    UFUNCTION(BlueprintCallable, Category = "Needs")
+    bool IsNeedCritical(EARPG_NeedType NeedType) const;
 
-    /** Get the most critical need */
-    UFUNCTION(BlueprintPure, Category = "Needs")
-    ENeedType GetMostCriticalNeed() const;
+    UFUNCTION(BlueprintCallable, Category = "Needs")
+    TArray<EARPG_NeedType> GetCriticalNeeds() const;
 
-    /** Check if any needs are critical */
-    UFUNCTION(BlueprintPure, Category = "Needs")
+    UFUNCTION(BlueprintCallable, Category = "Needs")
+    EARPG_NeedType GetMostCriticalNeed() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Needs")
     bool HasCriticalNeeds() const;
 
-    /** Satisfy a need (set to maximum) */
     UFUNCTION(BlueprintCallable, Category = "Needs")
-    void SatisfyNeed(ENeedType NeedType);
+    void SatisfyNeed(EARPG_NeedType NeedType);
 
-    /** Satisfy all needs */
     UFUNCTION(BlueprintCallable, Category = "Needs")
     void SatisfyAllNeeds();
 
-    /** Enable/disable the needs system */
     UFUNCTION(BlueprintCallable, Category = "Needs")
     void SetNeedsActive(bool bActive);
 
-    /** Add a new need type */
     UFUNCTION(BlueprintCallable, Category = "Needs")
-    void AddNeed(ENeedType NeedType, float StartingLevel = 1.0f, float DecayRate = 0.001f);
+    void AddNeed(EARPG_NeedType NeedType, float StartingLevel = 0.5f, float DecayRate = 0.001f);
 
-    /** Remove a need type */
     UFUNCTION(BlueprintCallable, Category = "Needs")
-    void RemoveNeed(ENeedType NeedType);
-
-protected:
-    // === INTERNAL FUNCTIONS ===
-    
-    /** Initialize default needs */
-    void InitializeDefaultNeeds();
-
-    /** Update all needs over time */
-    void UpdateNeeds(float DeltaTime);
-
-    /** Check and update critical status for a need */
-    void UpdateNeedCriticalStatus(ENeedType NeedType);
-
-    /** Broadcast need change events */
-    void BroadcastNeedChanged(ENeedType NeedType, float NewLevel);
+    void RemoveNeed(EARPG_NeedType NeedType);
 
     // === BLUEPRINT EVENTS ===
+    UFUNCTION(BlueprintImplementableEvent, Category = "Needs Events")
+    void OnNeedChangedBP(EARPG_NeedType NeedType, float NewLevel);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Needs Events")
+    void OnNeedCriticalBP(EARPG_NeedType NeedType);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Needs Events")
+    void OnNeedSatisfiedBP(EARPG_NeedType NeedType);
+
+protected:
+    // === CORE SYSTEM FUNCTIONS ===
     
-    UFUNCTION(BlueprintImplementableEvent, Category = "Needs Events")
-    void OnNeedChangedBP(ENeedType NeedType, float NewLevel);
+    /** Initialize default needs for this character */
+    void InitializeDefaultNeeds();
+    
+    /** Update all needs based on time passage */
+    void UpdateNeeds(float DeltaTime);
+    
+    /** Update critical status for a specific need and broadcast events */
+    void UpdateNeedCriticalStatus(EARPG_NeedType NeedType);
+    
+    /** Broadcast need changed event to both C++ and Blueprint listeners */
+    void BroadcastNeedChanged(EARPG_NeedType NeedType, float NewLevel);
 
-    UFUNCTION(BlueprintImplementableEvent, Category = "Needs Events")
-    void OnNeedCriticalBP(ENeedType NeedType);
-
-    UFUNCTION(BlueprintImplementableEvent, Category = "Needs Events")
-    void OnNeedSatisfiedBP(ENeedType NeedType);
+    // === HELPER FUNCTIONS ===
+    
+    /** Log needs update information with throttling */
+    void LogNeedsUpdate(bool bAnyNeedChanged, int32 CriticalCount);
+    
+    /** Set appropriate critical threshold based on need type */
+    void SetCriticalThresholdForNeedType(FARPG_AINeed& Need);
+    
+    /** Log when a new need is added */
+    void LogNeedAddition(EARPG_NeedType NeedType, const FARPG_AINeed& Need);
 };
