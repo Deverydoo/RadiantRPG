@@ -33,12 +33,20 @@ class RADIANTRPG_API UARPG_AIBrainComponent : public UActorComponent, public IAR
 public:
     UARPG_AIBrainComponent();
 
-protected:
-    virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
-public:
+    // === CONFIGURATION METHODS ===
+    
+    /** Load configuration from data table or use blueprint defaults */
+    UFUNCTION(BlueprintCallable, Category = "Configuration")
+    void LoadBrainConfiguration();
+    
+    /** Set data table config (call this before BeginPlay) */
+    UFUNCTION(BlueprintCallable, Category = "Configuration")
+    void SetDataTableConfig(UDataTable* DataTable, FName RowName);
+    
+    /** Get current effective configuration */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Configuration")
+    FARPG_AIBrainConfiguration GetEffectiveConfiguration() const;
+    
     // === IARPG_AIBrainInterface Implementation ===
     
     UFUNCTION(BlueprintCallable, Category = "AI Brain")
@@ -111,6 +119,25 @@ public:
 
 
 protected:
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+    
+    // === DATA TABLE INTEGRATION ===
+    
+    /** Data table containing brain configurations */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Data Table")
+    TObjectPtr<UDataTable> BrainConfigDataTable;
+    
+    /** Row name in the brain config data table */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Data Table")
+    FName BrainConfigRowName;
+    
+    /** Whether to use data table config (overrides blueprint config) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Data Table")
+    bool bUseDataTableConfig = false;
+    
     // === Configuration ===
 
     /** Brain configuration */
@@ -164,6 +191,12 @@ protected:
     FARPG_AIIntent BP_GenerateCuriosityIntent();
 
 private:
+    /** Load configuration from data table */
+    bool LoadConfigurationFromDataTable(FARPG_AIBrainConfiguration& OutConfig) const;
+    
+    /** Current effective configuration (either from data table or blueprint) */
+    FARPG_AIBrainConfiguration EffectiveConfig;
+    
     // === Internal State ===
 
     /** Recent stimuli buffer */

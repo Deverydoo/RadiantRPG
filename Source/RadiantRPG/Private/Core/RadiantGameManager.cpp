@@ -827,9 +827,21 @@ void URadiantGameManager::RefreshSystemHealth()
 // Helper function for enum to string conversion
 FString URadiantGameManager::GetEnumValueAsString(const FString& EnumName, int32 EnumValue) const
 {
-    const UEnum* EnumPtr = FindObject<UEnum>(ANY_PACKAGE, *EnumName, true);
+    // Use StaticEnum<> template function for known enums, or FindFirstObject for dynamic lookup
+    const UEnum* EnumPtr = nullptr;
+    
+    // Try to find the enum using the new recommended approach
+    EnumPtr = FindFirstObject<UEnum>(*EnumName, EFindFirstObjectOptions::ExactClass);
+    
     if (!EnumPtr)
     {
+        // Alternative approach: try to find with package context
+        EnumPtr = FindObject<UEnum>(GetTransientPackage(), *EnumName);
+    }
+    
+    if (!EnumPtr)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GameManager: Could not find enum '%s'"), *EnumName);
         return FString::Printf(TEXT("Unknown(%d)"), EnumValue);
     }
     

@@ -1,30 +1,26 @@
-// Source/RadiantRPG/Public/AI/Core/ARPG_AINeedsComponent.h
+// Public/AI/Core/ARPG_AINeedsComponent.h
+// AI-specific needs system that extends base NeedsComponent
 
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Components/ActorComponent.h"
-#include "GameplayTags.h"
+#include "Components/NeedsComponent.h"
 #include "Types/ARPG_AITypes.h"
-#include "Types/ARPG_NPCTypes.h"
+#include "GameplayTagContainer.h"
 #include "ARPG_AINeedsComponent.generated.h"
 
 class UARPG_AIBrainComponent;
 
-// Use unique delegate names to avoid conflicts with other components
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAINeedChanged, EARPG_NeedType, NeedType, float, NewLevel);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAINeedBecameUrgent, EARPG_NeedType, NeedType, float, Level);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAINeedSatisfied, EARPG_NeedType, NeedType, float, Level);
-
-
-
 /**
- * AI Needs Component
- * Manages basic needs like hunger, fatigue, safety, etc.
- * Contributes to AI decision making through the brain component
+ * AI-specific needs component that extends the base needs system
+ * 
+ * Adds AI-specific functionality like:
+ * - Intent suggestions based on needs
+ * - Brain communication
+ * - AI-driven need fulfillment behaviors
  */
-UCLASS(ClassGroup=(AI), meta=(BlueprintSpawnableComponent))
-class RADIANTRPG_API UARPG_AINeedsComponent : public UActorComponent
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+class RADIANTRPG_API UARPG_AINeedsComponent : public UNeedsComponent
 {
     GENERATED_BODY()
 
@@ -33,166 +29,83 @@ public:
 
 protected:
     virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+    /** Reference to brain component for AI communication */
+    UPROPERTY(BlueprintReadOnly, Category = "AI Components")
+    TWeakObjectPtr<UARPG_AIBrainComponent> BrainComponent;
+
+    /** Default needs configuration for AI characters */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Configuration")
+    TArray<FARPG_AINeed> DefaultNeeds;
+
 public:
-    // === Primary Interface ===
-
-    /** Initialize needs with configuration and custom needs list */
-    UFUNCTION(BlueprintCallable, Category = "AI Needs")
-    void InitializeNeeds(const FARPG_NeedsConfiguration& Config, const TArray<FARPG_AINeed>& InitialNeeds);
-
-    /** Update needs configuration */
-    UFUNCTION(BlueprintCallable, Category = "AI Needs")
-    void UpdateNeedsConfiguration(const FARPG_NeedsConfiguration& NewConfig);
-
-    /** Get current level of a specific need */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
-    float GetNeedLevel(EARPG_NeedType NeedType) const;
-
-    /** Set level of a specific need */
-    UFUNCTION(BlueprintCallable, Category = "AI Needs")
-    void SetNeedLevel(EARPG_NeedType NeedType, float NewLevel);
-
-    /** Modify need level by delta amount */
-    UFUNCTION(BlueprintCallable, Category = "AI Needs")
-    void ModifyNeedLevel(EARPG_NeedType NeedType, float DeltaAmount);
-
-    /** Get all current needs */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
-    TArray<FARPG_AINeed> GetAllNeeds() const;
-
-    /** Check if a specific need is urgent */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
-    bool IsNeedUrgent(EARPG_NeedType NeedType) const;
-
-    /** Check if any needs are urgent */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
-    bool HasUrgentNeeds() const;
-
-    /** Get list of all urgent needs */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
-    TArray<EARPG_NeedType> GetUrgentNeeds() const;
-
-    /** Get the most urgent need */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
-    EARPG_NeedType GetMostUrgentNeed() const;
-
-    /** Check if a specific need is satisfied */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
-    bool IsNeedSatisfied(EARPG_NeedType NeedType) const;
-
-    /** Satisfy a specific need (reduce to satisfied threshold) */
-    UFUNCTION(BlueprintCallable, Category = "AI Needs")
-    void SatisfyNeed(EARPG_NeedType NeedType);
-
-    /** Contribute to AI input vector (called by brain) */
-    UFUNCTION(BlueprintCallable, Category = "AI Needs")
-    void ContributeToInputs(FARPG_AIInputVector& InputVector) const;
+    // === AI-Specific Interface ===
 
     /** Get intent suggestions based on current needs */
     UFUNCTION(BlueprintCallable, Category = "AI Needs")
     TArray<FGameplayTag> GetNeedBasedIntentSuggestions() const;
 
-    // === Utility Functions ===
-
-    /** Pause or resume needs updates */
-    UFUNCTION(BlueprintCallable, Category = "AI Needs")
-    void SetNeedsUpdatePaused(bool bPaused);
-
-    /** Reset all needs to default values */
-    UFUNCTION(BlueprintCallable, Category = "AI Needs")
-    void ResetAllNeeds();
-
-    // === Events ===
-
-    /** Triggered when any need level changes */
-    UPROPERTY(BlueprintAssignable, Category = "AI Needs")
-    FOnAINeedChanged OnNeedChanged;
-
-    /** Triggered when a need becomes urgent */
-    UPROPERTY(BlueprintAssignable, Category = "AI Needs")
-    FOnAINeedBecameUrgent OnNeedBecameUrgent;
-
-    /** Triggered when a need becomes satisfied */
-    UPROPERTY(BlueprintAssignable, Category = "AI Needs")
-    FOnAINeedSatisfied OnNeedSatisfied;
-
-    // === Blueprint Events ===
-
-    /** Blueprint event for need updates */
-    UFUNCTION(BlueprintImplementableEvent, Category = "AI Needs")
-    void BP_OnNeedUpdated(EARPG_NeedType NeedType, float OldLevel, float NewLevel);
-
-    /** Blueprint event for urgent need state changes */
-    UFUNCTION(BlueprintImplementableEvent, Category = "AI Needs")
-    void BP_OnNeedBecameUrgent(EARPG_NeedType NeedType, float Level);
-
-    /** Blueprint event for satisfied need state changes */
-    UFUNCTION(BlueprintImplementableEvent, Category = "AI Needs")
-    void BP_OnNeedSatisfied(EARPG_NeedType NeedType, float Level);
-
-    /** Blueprint function to get custom intent for need */
-    UFUNCTION(BlueprintImplementableEvent, Category = "AI Needs")
-    FGameplayTag BP_GetIntentForNeed(EARPG_NeedType NeedType, float UrgencyLevel) const;
-
+    /** Get the most urgent need that requires attention */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
+    EARPG_NeedType GetMostUrgentNeed() const;
+
+    /** Check if any needs are urgent enough to interrupt current behavior */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
+    bool HasInterruptingNeeds() const;
+
+    /** Get intent tag for a specific need type */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Needs")
+    FGameplayTag GetIntentTagForNeed(EARPG_NeedType NeedType) const;
+
+    /** Notify brain of need state changes */
+    UFUNCTION(BlueprintCallable, Category = "AI Needs")
+    void NotifyBrainOfNeedChange(EARPG_NeedType NeedType, float NewLevel);
+
+    /** Evaluate if need can be satisfied with available actions */
+    UFUNCTION(BlueprintCallable, Category = "AI Needs")
+    bool CanSatisfyNeed(EARPG_NeedType NeedType) const;
+
+    /** Get all current needs as a map for brain input processing */
+    UFUNCTION(BlueprintCallable, Category = "Needs")
     TMap<EARPG_NeedType, float> GetAllNeedsAsMap() const;
 
+    /** Get all current needs as normalized values (0.0 to 1.0) */
+    UFUNCTION(BlueprintCallable, Category = "Needs")
+    TMap<EARPG_NeedType, float> GetAllNeedsNormalized() const;
+
 protected:
-    // === Configuration ===
+    // === Overridden Base Functions ===
 
-    /** Needs system configuration */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
-    FARPG_NeedsConfiguration NeedsConfig;
+    virtual void OnNeedValueChanged(EARPG_NeedType NeedType, float OldValue, float NewValue) override;
+    virtual void OnNeedBecomeCritical(EARPG_NeedType NeedType) override;
+    virtual void OnNeedNoLongerCritical(EARPG_NeedType NeedType) override;
 
-    /** Default needs setup */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
-    TArray<FARPG_AINeed> DefaultNeeds;
+    // === AI-Specific Internal Functions ===
 
-    // === State ===
+    /** Initialize references to other AI components */
+    void InitializeAIComponentReferences();
 
-    /** Map of current need levels */
-    UPROPERTY(BlueprintReadOnly, Category = "State")
-    TMap<EARPG_NeedType, FARPG_AINeed> CurrentNeeds;
+    /** Send need state update to brain component */
+    void SendNeedUpdateToBrain(EARPG_NeedType NeedType, float Level, bool bIsCritical);
 
-    /** Whether needs updates are paused */
-    UPROPERTY(BlueprintReadOnly, Category = "State")
-    bool bNeedsUpdatePaused = false;
+    /** Calculate urgency score for a need (0.0 to 1.0) */
+    float CalculateNeedUrgency(EARPG_NeedType NeedType) const;
 
-    /** Time since last update */
-    UPROPERTY(BlueprintReadOnly, Category = "State")
-    float TimeSinceLastUpdate = 0.0f;
+    /** Get default intent tag for need satisfaction */
+    FGameplayTag GetDefaultIntentForNeed(EARPG_NeedType NeedType) const;
 
-    /** Reference to brain component */
-    UPROPERTY(BlueprintReadOnly, Category = "Components")
-    TWeakObjectPtr<UARPG_AIBrainComponent> BrainComponent;
+    // === Blueprint Implementable Events ===
 
-private:
-    // === Internal Processing ===
+    /** Blueprint event for AI-specific need changes */
+    UFUNCTION(BlueprintImplementableEvent, Category = "AI Events")
+    void BP_OnAINeedChanged(EARPG_NeedType NeedType, float UrgencyLevel, bool bIsInterrupting);
 
-    /** Initialize component references */
-    void InitializeComponentReferences();
+    /** Blueprint function to get custom intent for need */
+    UFUNCTION(BlueprintImplementableEvent, Category = "AI Events")
+    FGameplayTag BP_GetIntentForNeed(EARPG_NeedType NeedType, float UrgencyLevel) const;
 
-    /** Initialize default needs */
-    void InitializeDefaultNeeds();
-
-    /** Update all needs over time */
-    void UpdateNeedsOverTime(float DeltaTime);
-
-    /** Update individual need */
-    void UpdateIndividualNeed(FARPG_AINeed& Need, float DeltaTime);
-
-    /** Check for urgent state changes */
-    void CheckUrgentStateChanges(EARPG_NeedType NeedType, const FARPG_AINeed& OldNeed, const FARPG_AINeed& NewNeed);
-
-    /** Check for satisfied state changes */
-    void CheckSatisfiedStateChanges(EARPG_NeedType NeedType, const FARPG_AINeed& OldNeed, const FARPG_AINeed& NewNeed);
-
-    /** Get default need configuration for a specific type */
-    FARPG_AINeed GetDefaultNeedForType(EARPG_NeedType NeedType) const;
-
-    /** Get intent tag for specific need type */
-    FGameplayTag GetIntentTagForNeed(EARPG_NeedType NeedType) const;
+    /** Blueprint function to check if need can be satisfied */
+    UFUNCTION(BlueprintImplementableEvent, Category = "AI Events")
+    bool BP_CanSatisfyNeed(EARPG_NeedType NeedType) const;
 };

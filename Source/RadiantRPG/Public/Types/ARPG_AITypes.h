@@ -75,6 +75,7 @@ enum class EARPG_NeedType : uint8
 UENUM(BlueprintType)
 enum class EARPG_PersonalityTrait : uint8
 {
+    None            UMETA(DisplayName = "None"),
     Aggression      UMETA(DisplayName = "Aggression"),
     Caution         UMETA(DisplayName = "Caution"),
     Curiosity       UMETA(DisplayName = "Curiosity"),
@@ -85,6 +86,8 @@ enum class EARPG_PersonalityTrait : uint8
     Intelligence    UMETA(DisplayName = "Intelligence"),
     Creativity      UMETA(DisplayName = "Creativity"),
     Patience        UMETA(DisplayName = "Patience"),
+    Bravery         UMETA(DisplayName = "Bravery"),
+    Impulsiveness   UMETA(DisplayName = "Impulsiveness"),
     MAX             UMETA(Hidden)
 };
 
@@ -264,6 +267,9 @@ struct RADIANTRPG_API FARPG_AINeed
     float DecayRate = 0.1f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need")
+    float UrgencyThreshold = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need")
     bool bIsActive = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need")
@@ -272,6 +278,9 @@ struct RADIANTRPG_API FARPG_AINeed
     /** Minimum threshold before this need becomes urgent */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float UrgentThreshold = 0.2f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need")
+    float MaxLevel = 0.2f;
 
     /** Maximum threshold where this need is satisfied */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -323,41 +332,94 @@ struct RADIANTRPG_API FARPG_AIPersonalityTrait
 /**
  * Brain configuration
  */
+/**
+ * Complete AI Brain Configuration Structure
+ * Matches the data table row structure
+ */
 USTRUCT(BlueprintType)
 struct RADIANTRPG_API FARPG_AIBrainConfiguration
 {
     GENERATED_BODY()
 
-    /** How frequently to process brain updates */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
-    float ProcessingFrequency = 0.1f;
+    // === BASIC INFO ===
+    
+    /** Display name for this brain configuration */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
+    FText DisplayName;
 
-    /** Time before curiosity activates (seconds) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
-    float CuriosityThreshold = 5.0f;
+    /** Description of this brain configuration */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
+    FText Description;
 
-    /** How long to remember recent stimuli */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
+    /** NPC type this config applies to */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
+    FGameplayTag NPCType;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
+    float ProcessingFrequency = 1.0f;
+    // === TIMING ===
+    
+    /** How often the brain updates (in seconds) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Timing", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+    float BrainUpdateFrequency = 1.0f;
+    
+
+    /** How long stimuli are remembered (seconds) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Timing", meta = (ClampMin = "1.0", ClampMax = "60.0"))
     float StimuliMemoryDuration = 10.0f;
 
-    /** Whether to enable debug logging */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
+    // === CURIOSITY ===
+    
+    /** Time without stimuli before curiosity activates (seconds) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Curiosity", meta = (ClampMin = "5.0", ClampMax = "300.0"))
+    float CuriosityThreshold = 30.0f;
+
+    /** How strong curiosity is when activated */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Curiosity", meta = (ClampMin = "0.1", ClampMax = "2.0"))
+    float CuriosityStrength = 1.0f;
+
+    // === FEATURES ===
+    
+    /** Whether this brain can form memories */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Features")
+    bool bCanFormMemories = true;
+
+    /** Whether this brain can learn and adapt */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Features")
+    bool bCanLearn = false;
+
+    /** Whether to log brain decisions for debugging */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
     bool bEnableDebugLogging = false;
 
-    /** Personality traits for this brain */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
-    TArray<FARPG_AIPersonalityTrait> PersonalityTraits;
+    // === PERFORMANCE ===
+    
+    /** Maximum number of stimuli to track at once */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Performance", meta = (ClampMin = "5", ClampMax = "50"))
+    int32 MaxTrackedStimuli = 20;
 
-    /** Initial need levels */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
-    TArray<FARPG_AINeed> InitialNeeds;
+    // === INTENTS ===
+    
+    /** Default idle intent when no other intents are active */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Intents")
+    FGameplayTag DefaultIdleIntent;
+
+    /** Possible curiosity behaviors */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Intents")
+    TArray<FGameplayTag> CuriosityIntents;
 
     FARPG_AIBrainConfiguration()
     {
-        ProcessingFrequency = 0.1f;
-        CuriosityThreshold = 5.0f;
+        DisplayName = FText::FromString(TEXT("Default Brain"));
+        Description = FText::FromString(TEXT("Basic AI brain configuration"));
+        BrainUpdateFrequency = 1.0f;
         StimuliMemoryDuration = 10.0f;
+        CuriosityThreshold = 30.0f;
+        CuriosityStrength = 1.0f;
+        bCanFormMemories = true;
+        bCanLearn = false;
         bEnableDebugLogging = false;
+        MaxTrackedStimuli = 20;
     }
 };
 
@@ -396,3 +458,4 @@ struct RADIANTRPG_API FARPG_AIBrainState
         bIsEnabled = true;
     }
 };
+

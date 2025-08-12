@@ -288,7 +288,7 @@ void ARadiantPlayerController::BindToPlayerCharacterEvents()
     UE_LOG(LogTemp, Log, TEXT("Bound to player character events"));
 }
 
-void ARadiantPlayerController::SetInputMode(EInputMode NewInputMode)
+void ARadiantPlayerController::SetRadiantInputMode(EInputMode NewInputMode)
 {
     if (CurrentInputMode == NewInputMode)
         return;
@@ -671,7 +671,7 @@ void ARadiantPlayerController::OnPlayerInteractableDetected(AActor* Interactable
 void ARadiantPlayerController::OnPlayerCharacterDeath(ABaseCharacter* DeadCharacter)
 {
     // Handle player death - switch to death screen, disable input, etc.
-    SetInputMode(EInputMode::UIOnly);
+    SetRadiantInputMode(EInputMode::UIOnly);
     
     // TODO: Show death screen UI
     // TODO: Trigger death camera

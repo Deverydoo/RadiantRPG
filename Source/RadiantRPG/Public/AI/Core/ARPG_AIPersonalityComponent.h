@@ -1,12 +1,14 @@
-// Source/RadiantRPG/Public/AI/Core/ARPG_AIPersonalityComponent.h
+// Public/AI/Core/ARPG_AIPersonalityComponent.h
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTags.h"
+#include "Engine/DataTable.h"
 #include "Types/ARPG_AIEventTypes.h"
 #include "Types/ARPG_AITypes.h"
+#include "Types/ARPG_AIDataTableTypes.h"
 #include "ARPG_AIPersonalityComponent.generated.h"
 
 class UARPG_AIBrainComponent;
@@ -30,8 +32,9 @@ struct RADIANTRPG_API FARPG_PersonalityConfiguration
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
     bool bEnablePersonalityInfluence = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
-    float PersonalityChangeRate = true;
+    /** Rate at which personality can change */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+    float PersonalityChangeRate = 1.0f;
 
     /** How much experiences affect personality change */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration", meta = (ClampMin = "0.0", ClampMax = "2.0"))
@@ -45,6 +48,7 @@ struct RADIANTRPG_API FARPG_PersonalityConfiguration
     {
         bAllowPersonalityChange = true;
         bEnablePersonalityInfluence = true;
+        PersonalityChangeRate = 1.0f;
         ExperienceImpactMultiplier = 1.0f;
         bEnableDebugLogging = false;
     }
@@ -54,6 +58,7 @@ struct RADIANTRPG_API FARPG_PersonalityConfiguration
  * AI Personality Component
  * Manages personality traits that influence AI behavior
  * Traits can evolve based on experiences
+ * Supports data table overrides for configuration
  */
 UCLASS(ClassGroup=(AI), meta=(BlueprintSpawnableComponent))
 class RADIANTRPG_API UARPG_AIPersonalityComponent : public UActorComponent
@@ -63,56 +68,78 @@ class RADIANTRPG_API UARPG_AIPersonalityComponent : public UActorComponent
 public:
     UARPG_AIPersonalityComponent();
 
-    /** Set personality trait (alias for SetTraitStrength for compatibility) */
     UFUNCTION(BlueprintCallable, Category = "AI Personality")
-    void SetPersonalityTrait(EARPG_PersonalityTrait TraitType, float NewStrength);
+    void SetPersonalityTrait(EARPG_PersonalityTrait TraitType, float Strength, float Flexibility = 0.2f);
 
-    // === Primary Interface ===
-    /** Initialize personality with configuration and traits */
-    UFUNCTION(BlueprintCallable, Category = "AI Personality")
-    void InitializePersonality(const FARPG_PersonalityConfiguration& Config, const TArray<FARPG_AIPersonalityTrait>& InitialTraits);
+    // === COMPONENT OVERRIDES ===
+    
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-    /** Update personality configuration */
-    UFUNCTION(BlueprintCallable, Category = "AI Personality")
-    void UpdatePersonalityConfiguration(const FARPG_PersonalityConfiguration& NewConfig);
+    // === CONFIGURATION METHODS ===
+    
+    /** Load configuration from data table if set, otherwise use blueprint defaults */
+    UFUNCTION(BlueprintCallable, Category = "Configuration")
+    void LoadPersonalityConfiguration();
+    
+    /** Set data table config (call this before BeginPlay) */
+    UFUNCTION(BlueprintCallable, Category = "Configuration")
+    void SetDataTableConfig(UDataTable* DataTable, FName RowName);
+    
+    /** Get current effective configuration */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Configuration")
+    FARPG_PersonalityConfiguration GetEffectiveConfiguration() const;
 
-    /** Get strength of a specific personality trait */
+    // === TRAIT MANAGEMENT ===
+
+    /** Get trait strength */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Personality")
     float GetTraitStrength(EARPG_PersonalityTrait TraitType) const;
-    
-    /** Set strength of a specific personality trait */
+
+    /** Set trait strength */
     UFUNCTION(BlueprintCallable, Category = "AI Personality")
-    void SetTraitStrength(EARPG_PersonalityTrait TraitType, float NewStrength);
+    void SetTraitStrength(EARPG_PersonalityTrait TraitType, float Strength, float Flexibility = 0.2f);
 
-    /** Modify trait strength by delta amount */
+    /** Modify trait strength by amount */
     UFUNCTION(BlueprintCallable, Category = "AI Personality")
-    void ModifyTraitStrength(EARPG_PersonalityTrait TraitType, float DeltaAmount);
+    bool ModifyTrait(EARPG_PersonalityTrait TraitType, float Amount);
 
-    /** Get all personality traits */
+    /** Check if trait exists */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Personality")
-    TArray<FARPG_AIPersonalityTrait> GetAllTraits() const;
+    bool HasTrait(EARPG_PersonalityTrait TraitType) const;
 
-    /** Get traits that are above threshold strength */
+    /** Get all current traits */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Personality")
-    TArray<EARPG_PersonalityTrait> GetStrongTraits(float Threshold = 0.7f) const;
-    void AddOrUpdateTrait(const FARPG_AIPersonalityTrait& Trait);
-    void RemoveTrait(EARPG_PersonalityTrait TraitType);
-    void SetTraitFlexibility(EARPG_PersonalityTrait TraitType, float NewFlexibility);
-    void ProcessExperience(FGameplayTag ExperienceTag, float Intensity, AActor* RelatedActor);
-    void ReactToEvent(const FARPG_AIEvent& AIEvent);
-    void ApplyPersonalityDevelopment();
+    TMap<EARPG_PersonalityTrait, FARPG_AIPersonalityTrait> GetAllTraits() const;
+
+    // === BEHAVIOR INFLUENCE ===
+
+    /** Modify intent based on personality */
     void ModifyIntent(FARPG_AIIntent& Intent) const;
+    
+    /** Get weight for action based on personality */
     float GetActionWeight(FGameplayTag ActionTag) const;
+    
+    /** Check if personality supports specific action */
     bool SupportsAction(FGameplayTag ActionTag) const;
+    
+    /** Get relationship modifier between personalities */
     float GetRelationshipModifier(const UARPG_AIPersonalityComponent* OtherPersonality) const;
+    
+    /** Calculate compatibility between personalities */
     float GetPersonalityCompatibility(const UARPG_AIPersonalityComponent* OtherPersonality) const;
 
+    // === BLUEPRINT ACCESSORS ===
+
+    /** Get personality-based intents */
     UFUNCTION(BlueprintCallable, Category = "AI Personality")
     TArray<FGameplayTag> GetPersonalityBasedIntents() const;
 
+    /** Get personality traits as gameplay tag map */
     UFUNCTION(BlueprintCallable, Category = "AI Personality")
     TMap<FGameplayTag, float> GetPersonalityTraits() const;
 
+    /** Get personality traits as enum map */
     UFUNCTION(BlueprintCallable, Category = "AI Personality")
     TMap<EARPG_PersonalityTrait, float> GetPersonalityTraitsAsEnumMap() const;
 
@@ -128,6 +155,8 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Personality")
     EARPG_PersonalityTrait GetDominantTrait() const;
 
+    // === EXPERIENCE AND LEARNING ===
+
     /** Add experience that affects personality development */
     UFUNCTION(BlueprintCallable, Category = "AI Personality")
     void AddExperience(FGameplayTag ExperienceTag, float Intensity);
@@ -136,9 +165,14 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Personality")
     TMap<FGameplayTag, float> GetExperienceHistory() const;
 
+    // === UTILITY ===
+
     /** Get readable personality description */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Personality")
     FString GetPersonalityDescription() const;
+
+    /** Reset personality to defaults */
+    UFUNCTION(BlueprintCallable, Category = "AI Personality")
     void ResetPersonality();
 
     /** Get personality summary */
@@ -147,67 +181,38 @@ public:
 
     /** Check if personality favors specific action type */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Personality")
-    bool FavorsActionType(FGameplayTag ActionTag, float Threshold = 0.6f) const;
-
-    /** Check if personality opposes specific action type */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Personality")
-    bool OpposesActionType(FGameplayTag ActionTag, float Threshold = 0.6f) const;
-
-    /** Modify intent based on personality */
-    UFUNCTION(BlueprintCallable, Category = "AI Personality")
-    FARPG_AIIntent ModifyIntentByPersonality(const FARPG_AIIntent& BaseIntent) const;
-
-    /** Get custom action weight for personality */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AI Personality")
-    float GetCustomActionWeight(FGameplayTag ActionTag) const;
-
-    /** Generate completely random personality */
-    UFUNCTION(BlueprintCallable, Category = "AI Personality")
-    void GenerateRandomPersonality();
-
-    // === Events ===
-
-    /** Blueprint event for experience processing */
-    UFUNCTION(BlueprintImplementableEvent, Category = "AI Personality")
-    void BP_OnExperienceProcessed(FGameplayTag ExperienceTag, float Intensity);
-
-    /** Blueprint function for custom intent modification */
-    UFUNCTION(BlueprintImplementableEvent, Category = "AI Personality")
-    FARPG_AIIntent BP_ModifyIntentByPersonality(const FARPG_AIIntent& BaseIntent) const;
-    
-    /** Triggered when a personality trait changes */
-    UPROPERTY(BlueprintAssignable, Category = "AI Personality")
-    FOnPersonalityTraitChanged OnPersonalityTraitChanged;
-
-    /** Triggered when overall personality changes significantly */
-    UPROPERTY(BlueprintAssignable, Category = "AI Personality")
-    FOnPersonalityChanged OnPersonalityChanged;
-
-    // === Blueprint Events ===
-
-    /** Blueprint event for trait changes */
-    UFUNCTION(BlueprintImplementableEvent, Category = "AI Personality")
-    void BP_OnPersonalityTraitChanged(EARPG_PersonalityTrait TraitType, float OldStrength, float NewStrength);
-
-    /** Blueprint function for custom action weight calculation */
-    UFUNCTION(BlueprintImplementableEvent, BlueprintPure, Category = "AI Personality")
     float BP_GetCustomActionWeight(FGameplayTag ActionTag) const;
 
+    // === EVENTS ===
+
+    /** Personality trait changed event */
+    UPROPERTY(BlueprintAssignable, Category = "Events")
+    FOnPersonalityTraitChanged OnPersonalityTraitChanged;
+
+    /** Personality description changed event */
+    UPROPERTY(BlueprintAssignable, Category = "Events")
+    FOnPersonalityChanged OnPersonalityChanged;
+
 protected:
-    virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    // === CONFIGURATION ===
 
-    // === Configuration ===
+    /** Data table containing personality configurations */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
+    TObjectPtr<UDataTable> PersonalityDataTable;
 
-    /** Personality system configuration */
+    /** Row name in data table to use for configuration */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
+    FName DataTableRowName;
+
+    /** Personality system configuration (used if no data table is set) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
     FARPG_PersonalityConfiguration PersonalityConfig;
 
-    /** Default personality traits */
+    /** Default personality traits (used if no data table is set) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
     TArray<FARPG_AIPersonalityTrait> DefaultTraits;
 
-    // === State ===
+    // === STATE ===
 
     /** Current personality traits */
     UPROPERTY(BlueprintReadOnly, Category = "State")
@@ -221,9 +226,17 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "Components")
     TWeakObjectPtr<UARPG_AIBrainComponent> BrainComponent;
 
-private:
-    // === Internal Processing ===
+    /** Current effective configuration (either from data table or blueprint) */
+    FARPG_PersonalityConfiguration EffectiveConfig;
 
+private:
+    // === INTERNAL PROCESSING ===
+
+    /** Load configuration from data table */
+    bool LoadConfigurationFromDataTable(FARPG_PersonalityConfiguration& OutConfig, TArray<FARPG_AIPersonalityTrait>& OutTraits) const;
+    FARPG_AIPersonalityTrait CreateTraitFromDataTable(EARPG_PersonalityTrait TraitType, float Strength) const;
+
+    /** Get trait display name */
     FString GetTraitDisplayName(EARPG_PersonalityTrait TraitType) const;
     
     /** Initialize component references */

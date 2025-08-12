@@ -8,6 +8,7 @@
 #include "AI/Core/ARPG_AIEventManager.h"
 #include "Engine/World.h"
 #include "RadiantRPG.h"
+#include "Types/ARPG_AIDataTableTypes.h"
 #include "Types/RadiantAITypes.h"
 
 UARPG_AIBrainComponent::UARPG_AIBrainComponent()
@@ -41,21 +42,15 @@ void UARPG_AIBrainComponent::BeginPlay()
 {
     Super::BeginPlay();
     
-    // Initialize component references
-    InitializeComponentReferences();
+    // Load configuration first (data table takes priority)
+    LoadBrainConfiguration();
     
-    // Register with event manager
+    // Continue with existing initialization...
+    InitializeComponentReferences();
     RegisterWithEventManager();
     
-    // Enable brain by default
-    CurrentBrainState.bIsEnabled = true;
-    SetBrainState(EARPG_BrainState::Processing);
-    
-    if (BrainConfig.bEnableDebugLogging)
-    {
-        UE_LOG(LogARPG, Log, TEXT("AI Brain Component initialized for %s"), 
-               GetOwner() ? *GetOwner()->GetName() : TEXT("Unknown"));
-    }
+    UE_LOG(LogARPG, Log, TEXT("Brain Component: Initialized with %s configuration"), 
+           bUseDataTableConfig ? TEXT("DataTable") : TEXT("Blueprint"));
 }
 
 void UARPG_AIBrainComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -685,4 +680,82 @@ void UARPG_AIBrainComponent::ExecuteIntent(const FARPG_AIIntent& Intent)
         UE_LOG(LogARPG, Log, TEXT("Intent executed: %s (Priority: %d, Confidence: %.2f)"), 
                *Intent.IntentTag.ToString(), (int32)Intent.Priority, Intent.Confidence);
     }
+}
+
+void UARPG_AIBrainComponent::LoadBrainConfiguration()
+{
+    bool bConfigLoaded = false;
+    
+    // Try to load from data table first
+    if (bUseDataTableConfig && LoadConfigurationFromDataTable(EffectiveConfig))
+    {
+        bConfigLoaded = true;
+        UE_LOG(LogARPG, Log, TEXT("Brain: Loaded configuration from DataTable row '%s'"), 
+               *BrainConfigRowName.ToString());
+    }
+    
+    // Fallback to blueprint configuration
+    if (!bConfigLoaded)
+    {
+        EffectiveConfig = BrainConfig; // Use blueprint-set config
+        UE_LOG(LogARPG, Log, TEXT("Brain: Using Blueprint configuration (DataTable: %s)"), 
+               bUseDataTableConfig ? TEXT("Failed") : TEXT("Disabled"));
+    }
+    
+    // Apply the effective configuration
+    BrainConfig = EffectiveConfig;
+}
+
+void UARPG_AIBrainComponent::SetDataTableConfig(UDataTable* DataTable, FName RowName)
+{
+    BrainConfigDataTable = DataTable;
+    BrainConfigRowName = RowName;
+    bUseDataTableConfig = (DataTable != nullptr && !RowName.IsNone());
+    
+    // If we're already initialized, reload configuration
+    if (HasBegunPlay())
+    {
+        LoadBrainConfiguration();
+    }
+}
+
+FARPG_AIBrainConfiguration UARPG_AIBrainComponent::GetEffectiveConfiguration() const
+{
+    return EffectiveConfig;
+}
+
+bool UARPG_AIBrainComponent::LoadConfigurationFromDataTable(FARPG_AIBrainConfiguration& OutConfig) const
+{
+    if (!BrainConfigDataTable || BrainConfigRowName.IsNone())
+    {
+        return false;
+    }
+    
+    // Find the row in the data table
+    FString ContextString = FString::Printf(TEXT("Loading brain config for %s"), 
+                                          GetOwner() ? *GetOwner()->GetName() : TEXT("Unknown"));
+    
+    FARPG_AIBrainConfigRow* ConfigRow = BrainConfigDataTable->FindRow<FARPG_AIBrainConfigRow>(
+        BrainConfigRowName, ContextString);
+    
+    if (!ConfigRow)
+    {
+        UE_LOG(LogARPG, Warning, TEXT("Brain: Failed to find row '%s' in brain config data table"), 
+               *BrainConfigRowName.ToString());
+        return false;
+    }
+    
+    // Convert data table row to configuration struct
+    OutConfig.BrainUpdateFrequency = ConfigRow->BrainUpdateFrequency;
+    OutConfig.StimuliMemoryDuration = ConfigRow->StimuliMemoryDuration;
+    OutConfig.CuriosityThreshold = ConfigRow->CuriosityThreshold;
+    OutConfig.CuriosityStrength = ConfigRow->CuriosityStrength;
+    OutConfig.bCanFormMemories = ConfigRow->bCanFormMemories;
+    OutConfig.bCanLearn = ConfigRow->bCanLearn;
+    OutConfig.bEnableDebugLogging = ConfigRow->bEnableDebugLogging;
+    OutConfig.MaxTrackedStimuli = ConfigRow->MaxTrackedStimuli;
+    OutConfig.DefaultIdleIntent = ConfigRow->DefaultIdleIntent;
+    OutConfig.CuriosityIntents = ConfigRow->CuriosityIntents;
+    
+    return true;
 }

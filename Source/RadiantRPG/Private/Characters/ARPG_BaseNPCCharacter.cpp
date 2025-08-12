@@ -17,14 +17,17 @@ AARPG_BaseNPCCharacter::AARPG_BaseNPCCharacter()
     // Set character type for BaseCharacter
     CharacterType = ECharacterType::NPC;
 
-    // Create AI components
+    // Replace the base NeedsComponent with AI-specific version
+    if (NeedsComponent != nullptr)
+    {
+        NeedsComponent->DestroyComponent();
+    }
+    NeedsComponent = CreateDefaultSubobject<UARPG_AINeedsComponent>(TEXT("AINeedsComponent"));
+
+    // Create other AI components
     BrainComponent = CreateDefaultSubobject<UARPG_AIBrainComponent>(TEXT("BrainComponent"));
     MemoryComponent = CreateDefaultSubobject<UARPG_AIMemoryComponent>(TEXT("MemoryComponent"));
     PerceptionComponent = CreateDefaultSubobject<UARPG_AIPerceptionComponent>(TEXT("PerceptionComponent"));
-    
-    // REMOVE THIS LINE - NeedsComponent is already created in BaseCharacter
-    // NeedsComponent = CreateDefaultSubobject<UARPG_AINeedsComponent>(TEXT("NeedsComponent"));
-    
     PersonalityComponent = CreateDefaultSubobject<UARPG_AIPersonalityComponent>(TEXT("PersonalityComponent"));
 
     // Set default values

@@ -48,6 +48,135 @@ class RADIANTRPG_API ARadiantPlayerController : public APlayerController
 public:
     ARadiantPlayerController();
 
+    // === EVENTS ===
+    UPROPERTY(BlueprintAssignable, Category = "Controller Events")
+    FOnInputModeChanged OnInputModeChanged;
+
+    UPROPERTY(BlueprintAssignable, Category = "Controller Events")
+    FOnControllerPossessedPlayer OnControllerPossessedPlayer;
+
+    // === ENHANCED INPUT ACTION HANDLERS ===
+    
+    /** Handle movement input and delegate to character */
+    void HandleMove(const FInputActionValue& Value);
+
+    /** Handle look input with sensitivity applied */
+    void HandleLook(const FInputActionValue& Value);
+
+    /** Handle jump start */
+    void HandleJumpStart();
+
+    /** Handle jump stop */
+    void HandleJumpStop();
+
+    /** Handle camera toggle */
+    void HandleToggleCamera();
+
+    /** Handle interaction */
+    void HandleInteract();
+
+    /** Handle zoom input */
+    void HandleZoom(const FInputActionValue& Value);
+
+    /** Handle sprint start */
+    void HandleSprintStart();
+
+    /** Handle sprint stop */
+    void HandleSprintStop();
+
+    // === INPUT MODE MANAGEMENT ===
+    
+    /** Set input mode (Game/UI/Both) */
+    UFUNCTION(BlueprintCallable, Category = "Input")
+    void SetRadiantInputMode(EInputMode NewInputMode);
+
+    /** Get current input mode */
+    UFUNCTION(BlueprintPure, Category = "Input")
+    EInputMode GetInputMode() const { return CurrentInputMode; }
+
+    /** Add input mapping context */
+    UFUNCTION(BlueprintCallable, Category = "Input")
+    void AddInputMappingContext(UInputMappingContext* MappingContext, int32 Priority = 0);
+
+    /** Remove input mapping context */
+    UFUNCTION(BlueprintCallable, Category = "Input")
+    void RemoveInputMappingContext(UInputMappingContext* MappingContext);
+
+    /** Clear all input mapping contexts */
+    UFUNCTION(BlueprintCallable, Category = "Input")
+    void ClearAllInputMappingContexts();
+
+    // === HUD INTERFACE ===
+    
+    /** Get current HUD widget */
+    UFUNCTION(BlueprintPure, Category = "UI")
+    URadiantHUD* GetHUDWidget() const { return HUDWidget; }
+
+    /** Create and show HUD */
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void CreateHUD();
+
+    /** Hide HUD */
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void HideHUD();
+
+    /** Show HUD */
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void ShowHUD();
+
+    /** Toggle HUD visibility */
+    UFUNCTION(BlueprintCallable, Category = "UI")
+    void ToggleHUD();
+
+    // === PLAYER SETTINGS ===
+    
+    /** Apply input settings to possessed character */
+    UFUNCTION(BlueprintCallable, Category = "Settings")
+    void ApplyInputSettings();
+
+    /** Save player settings */
+    UFUNCTION(BlueprintCallable, Category = "Settings")
+    void SavePlayerSettings();
+
+    /** Load player settings */
+    UFUNCTION(BlueprintCallable, Category = "Settings")
+    void LoadPlayerSettings();
+
+    // === INPUT SETTINGS INTERFACE ===
+    
+    UFUNCTION(BlueprintCallable, Category = "Input Settings")
+    void SetMouseSensitivity(float NewSensitivity);
+
+    UFUNCTION(BlueprintCallable, Category = "Input Settings")
+    void SetGamepadSensitivity(float NewSensitivity);
+
+    UFUNCTION(BlueprintCallable, Category = "Input Settings")
+    void SetInvertMouseY(bool bInvert);
+
+    UFUNCTION(BlueprintCallable, Category = "Input Settings")
+    void SetInvertGamepadY(bool bInvert);
+
+    // === ACCESSIBILITY INTERFACE ===
+    
+    UFUNCTION(BlueprintCallable, Category = "Accessibility")
+    void SetUIScale(float NewScale);
+
+    UFUNCTION(BlueprintCallable, Category = "Accessibility")
+    void SetSubtitlesEnabled(bool bEnabled);
+
+    UFUNCTION(BlueprintCallable, Category = "Accessibility")
+    void SetColorBlindSupport(bool bEnabled);
+
+    // === PLAYER CHARACTER INTERFACE ===
+    
+    /** Get possessed player character */
+    UFUNCTION(BlueprintPure, Category = "Player")
+    APlayerCharacter* GetPlayerCharacter() const { return PossessedPlayerCharacter; }
+
+    /** Send command to player character */
+    UFUNCTION(BlueprintCallable, Category = "Player")
+    void SendPlayerCommand(const FString& Command, const FString& Parameters = "");
+
 protected:
     virtual void BeginPlay() override;
     virtual void OnPossess(APawn* InPawn) override;
@@ -144,138 +273,6 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "Player")
     APlayerCharacter* PossessedPlayerCharacter;
 
-public:
-    // === EVENTS ===
-    
-    UPROPERTY(BlueprintAssignable, Category = "Controller Events")
-    FOnInputModeChanged OnInputModeChanged;
-
-    UPROPERTY(BlueprintAssignable, Category = "Controller Events")
-    FOnControllerPossessedPlayer OnControllerPossessedPlayer;
-
-    // === ENHANCED INPUT ACTION HANDLERS ===
-    
-    /** Handle movement input and delegate to character */
-    void HandleMove(const FInputActionValue& Value);
-
-    /** Handle look input with sensitivity applied */
-    void HandleLook(const FInputActionValue& Value);
-
-    /** Handle jump start */
-    void HandleJumpStart();
-
-    /** Handle jump stop */
-    void HandleJumpStop();
-
-    /** Handle camera toggle */
-    void HandleToggleCamera();
-
-    /** Handle interaction */
-    void HandleInteract();
-
-    /** Handle zoom input */
-    void HandleZoom(const FInputActionValue& Value);
-
-    /** Handle sprint start */
-    void HandleSprintStart();
-
-    /** Handle sprint stop */
-    void HandleSprintStop();
-
-    // === INPUT MODE MANAGEMENT ===
-    
-    /** Set input mode (Game/UI/Both) */
-    UFUNCTION(BlueprintCallable, Category = "Input")
-    void SetInputMode(EInputMode NewInputMode);
-
-    /** Get current input mode */
-    UFUNCTION(BlueprintPure, Category = "Input")
-    EInputMode GetInputMode() const { return CurrentInputMode; }
-
-    /** Add input mapping context */
-    UFUNCTION(BlueprintCallable, Category = "Input")
-    void AddInputMappingContext(UInputMappingContext* MappingContext, int32 Priority = 0);
-
-    /** Remove input mapping context */
-    UFUNCTION(BlueprintCallable, Category = "Input")
-    void RemoveInputMappingContext(UInputMappingContext* MappingContext);
-
-    /** Clear all input mapping contexts */
-    UFUNCTION(BlueprintCallable, Category = "Input")
-    void ClearAllInputMappingContexts();
-
-    // === HUD INTERFACE ===
-    
-    /** Get current HUD widget */
-    UFUNCTION(BlueprintPure, Category = "UI")
-    URadiantHUD* GetHUDWidget() const { return HUDWidget; }
-
-    /** Create and show HUD */
-    UFUNCTION(BlueprintCallable, Category = "UI")
-    void CreateHUD();
-
-    /** Hide HUD */
-    UFUNCTION(BlueprintCallable, Category = "UI")
-    void HideHUD();
-
-    /** Show HUD */
-    UFUNCTION(BlueprintCallable, Category = "UI")
-    void ShowHUD();
-
-    /** Toggle HUD visibility */
-    UFUNCTION(BlueprintCallable, Category = "UI")
-    void ToggleHUD();
-
-    // === PLAYER SETTINGS ===
-    
-    /** Apply input settings to possessed character */
-    UFUNCTION(BlueprintCallable, Category = "Settings")
-    void ApplyInputSettings();
-
-    /** Save player settings */
-    UFUNCTION(BlueprintCallable, Category = "Settings")
-    void SavePlayerSettings();
-
-    /** Load player settings */
-    UFUNCTION(BlueprintCallable, Category = "Settings")
-    void LoadPlayerSettings();
-
-    // === INPUT SETTINGS INTERFACE ===
-    
-    UFUNCTION(BlueprintCallable, Category = "Input Settings")
-    void SetMouseSensitivity(float NewSensitivity);
-
-    UFUNCTION(BlueprintCallable, Category = "Input Settings")
-    void SetGamepadSensitivity(float NewSensitivity);
-
-    UFUNCTION(BlueprintCallable, Category = "Input Settings")
-    void SetInvertMouseY(bool bInvert);
-
-    UFUNCTION(BlueprintCallable, Category = "Input Settings")
-    void SetInvertGamepadY(bool bInvert);
-
-    // === ACCESSIBILITY INTERFACE ===
-    
-    UFUNCTION(BlueprintCallable, Category = "Accessibility")
-    void SetUIScale(float NewScale);
-
-    UFUNCTION(BlueprintCallable, Category = "Accessibility")
-    void SetSubtitlesEnabled(bool bEnabled);
-
-    UFUNCTION(BlueprintCallable, Category = "Accessibility")
-    void SetColorBlindSupport(bool bEnabled);
-
-    // === PLAYER CHARACTER INTERFACE ===
-    
-    /** Get possessed player character */
-    UFUNCTION(BlueprintPure, Category = "Player")
-    APlayerCharacter* GetPlayerCharacter() const { return PossessedPlayerCharacter; }
-
-    /** Send command to player character */
-    UFUNCTION(BlueprintCallable, Category = "Player")
-    void SendPlayerCommand(const FString& Command, const FString& Parameters = "");
-
-protected:
     // === INITIALIZATION ===
     
     /** Initialize input mapping contexts */
