@@ -8,6 +8,7 @@
 #include "AI/Core/ARPG_AIEventManager.h"
 #include "Engine/World.h"
 #include "RadiantRPG.h"
+#include "AI/Core/ARPG_AIBehaviorExecutorComponent.h"
 #include "Types/ARPG_AIDataTableTypes.h"
 #include "Types/RadiantAITypes.h"
 
@@ -48,6 +49,8 @@ void UARPG_AIBrainComponent::BeginPlay()
     // Continue with existing initialization...
     InitializeComponentReferences();
     RegisterWithEventManager();
+
+    BehaviorExecutor = GetOwner()->FindComponentByClass<UARPG_AIBehaviorExecutorComponent>();
     
     UE_LOG(LogARPG, Log, TEXT("Brain Component: Initialized with %s configuration"), 
            bUseDataTableConfig ? TEXT("DataTable") : TEXT("Blueprint"));
@@ -610,75 +613,22 @@ FARPG_AIIntent UARPG_AIBrainComponent::GetCurrentIntent() const
 
 void UARPG_AIBrainComponent::ExecuteIntent(const FARPG_AIIntent& Intent)
 {
-    if (!ValidateIntent(Intent))
+    if (BehaviorExecutor && BehaviorExecutor->CanExecuteIntent(Intent))
     {
+        BehaviorExecutor->StartExecution(Intent);
         if (BrainConfig.bEnableDebugLogging)
         {
-            UE_LOG(LogARPG, Warning, TEXT("Attempted to execute invalid intent: %s"), *Intent.IntentTag.ToString());
+            UE_LOG(LogARPG, Log, TEXT("Delegated intent to behavior executor: %s"), *Intent.IntentTag.ToString());
         }
-        return;
-    }
-
-    // Update current intent
-    CurrentBrainState.CurrentIntent = Intent;
-    
-    // Set brain state to executing
-    SetBrainState(EARPG_BrainState::Executing);
-    
-    // Try Blueprint implementation first
-    if (BP_ExecuteIntent(Intent))
-    {
-        if (BrainConfig.bEnableDebugLogging)
-        {
-            UE_LOG(LogARPG, Log, TEXT("Intent executed via Blueprint: %s"), *Intent.IntentTag.ToString());
-        }
-        return;
-    }
-    
-    // Default C++ execution logic
-    // This is a basic implementation - in a full system you'd have a behavior executor component
-    if (Intent.IntentTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("AI.Intent.Idle"))))
-    {
-        // Handle idle intent - minimal processing
-        if (BrainConfig.bEnableDebugLogging)
-        {
-            UE_LOG(LogARPG, Log, TEXT("Executing idle intent"));
-        }
-    }
-    else if (Intent.IntentTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("AI.Intent.Explore"))))
-    {
-        // Handle exploration intent
-        if (BrainConfig.bEnableDebugLogging)
-        {
-            UE_LOG(LogARPG, Log, TEXT("Executing exploration intent"));
-        }
-        // In a full implementation, this would trigger movement/pathfinding
-    }
-    else if (Intent.IntentTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("AI.Intent.Alert"))))
-    {
-        // Handle alert intent
-        if (BrainConfig.bEnableDebugLogging)
-        {
-            UE_LOG(LogARPG, Log, TEXT("Executing alert intent"));
-        }
-        // In a full implementation, this would trigger alert behaviors
     }
     else
     {
-        // Unknown intent type - log warning
         if (BrainConfig.bEnableDebugLogging)
         {
-            UE_LOG(LogARPG, Warning, TEXT("Unknown intent type for execution: %s"), *Intent.IntentTag.ToString());
+            UE_LOG(LogARPG, Warning, TEXT("No behavior executor available for intent: %s"), *Intent.IntentTag.ToString());
         }
-    }
-    
-    // Broadcast intent execution
-    OnIntentChanged.Broadcast(Intent);
-    
-    if (BrainConfig.bEnableDebugLogging)
-    {
-        UE_LOG(LogARPG, Log, TEXT("Intent executed: %s (Priority: %d, Confidence: %.2f)"), 
-               *Intent.IntentTag.ToString(), (int32)Intent.Priority, Intent.Confidence);
+        // Fall back to idle
+        SetBrainState(EARPG_BrainState::Idle);
     }
 }
 

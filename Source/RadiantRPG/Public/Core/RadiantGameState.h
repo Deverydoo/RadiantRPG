@@ -280,6 +280,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Global State")
     void ToggleGlobalFlag(FGameplayTag Flag);
 
+    UFUNCTION(BlueprintPure, Category = "Factions")
+    bool AreFactionsAtWar(FGameplayTag FactionA, FGameplayTag FactionB) const;
+
     /** Get all active global flags */
     UFUNCTION(BlueprintPure, Category = "Global State")
     FGameplayTagContainer GetGlobalFlags() const { return GlobalFlags; }

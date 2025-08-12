@@ -621,3 +621,48 @@ FARPG_AIEvent UARPG_AIEventManager::ConvertStimulusToEvent(const FARPG_AIStimulu
     
     return Event;
 }
+
+void UARPG_AIEventManager::RegisterSubscriber(TScriptInterface<IARPG_EventSubscriber> Subscriber)
+{
+    if (!Subscriber.GetInterface())
+    {
+        return;
+    }
+    
+    // Subscribe to all events - the subscriber can filter what it cares about
+    FGameplayTag AllEventsTag = FGameplayTag::RequestGameplayTag(TEXT("AI.Event"));
+    InterfaceSubscribers.FindOrAdd(AllEventsTag).AddUnique(Subscriber);
+    
+    if (bDebugLogging)
+    {
+        UE_LOG(LogARPG, Log, TEXT("Registered event subscriber"));
+    }
+}
+
+void UARPG_AIEventManager::UnregisterSubscriber(TScriptInterface<IARPG_EventSubscriber> Subscriber)
+{
+    if (!Subscriber.GetInterface())
+    {
+        return;
+    }
+    
+    // Remove from all subscription lists
+    for (auto& SubscriptionPair : InterfaceSubscribers)
+    {
+        SubscriptionPair.Value.Remove(Subscriber);
+    }
+    
+    // Clean up empty subscription lists
+    for (auto It = InterfaceSubscribers.CreateIterator(); It; ++It)
+    {
+        if (It->Value.Num() == 0)
+        {
+            It.RemoveCurrent();
+        }
+    }
+    
+    if (bDebugLogging)
+    {
+        UE_LOG(LogARPG, Log, TEXT("Unregistered event subscriber"));
+    }
+}

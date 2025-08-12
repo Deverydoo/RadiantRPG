@@ -675,3 +675,27 @@ void ARadiantGameState::OnRep_ActiveWars()
 {
     UE_LOG(LogTemp, Verbose, TEXT("Active wars replicated: %d wars"), ActiveWars.Num());
 }
+
+bool ARadiantGameState::AreFactionsAtWar(FGameplayTag FactionA, FGameplayTag FactionB) const
+{
+    if (!FactionA.IsValid() || !FactionB.IsValid())
+    {
+        return false;
+    }
+
+    // Same faction cannot be at war with itself
+    if (FactionA == FactionB)
+    {
+        return false;
+    }
+
+    // Generate war tags to check against ActiveWars
+    FString WarTagAB = FString::Printf(TEXT("%s_vs_%s"), *FactionA.ToString(), *FactionB.ToString());
+    FString WarTagBA = FString::Printf(TEXT("%s_vs_%s"), *FactionB.ToString(), *FactionA.ToString());
+    
+    FGameplayTag WarGameplayTagAB = FGameplayTag::RequestGameplayTag(FName(*WarTagAB));
+    FGameplayTag WarGameplayTagBA = FGameplayTag::RequestGameplayTag(FName(*WarTagBA));
+
+    // Check if either war tag exists in ActiveWars
+    return ActiveWars.Contains(WarGameplayTagAB) || ActiveWars.Contains(WarGameplayTagBA);
+}

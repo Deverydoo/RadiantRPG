@@ -31,6 +31,7 @@ UENUM(BlueprintType)
 enum class EARPG_BrainState : uint8
 {
     Inactive        UMETA(DisplayName = "Inactive"),
+    Idle            UMETA(DisplayName = "Idle"),
     Processing      UMETA(DisplayName = "Processing"),
     Deciding        UMETA(DisplayName = "Deciding"),
     Executing       UMETA(DisplayName = "Executing"),

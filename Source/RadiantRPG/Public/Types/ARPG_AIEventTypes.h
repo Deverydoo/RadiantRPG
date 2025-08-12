@@ -3,30 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "Engine/DataTable.h"
-#include "GameplayTags.h"
-#include "UObject/NoExportTypes.h"
 #include "ARPG_AIEventTypes.generated.h"
 
 class AActor;
-
-/**
- * Memory types for AI memory system
- */
-UENUM(BlueprintType)
-enum class EARPG_MemoryType : uint8
-{
-    Event           UMETA(DisplayName = "Event"),
-    Entity          UMETA(DisplayName = "Entity"),
-    Location        UMETA(DisplayName = "Location"),
-    Item            UMETA(DisplayName = "Item"),
-    Conversation    UMETA(DisplayName = "Conversation"),
-    Trade           UMETA(DisplayName = "Trade"),
-    Combat          UMETA(DisplayName = "Combat"),
-    Death           UMETA(DisplayName = "Death"),
-    Any             UMETA(DisplayName = "Any"),
-    MAX             UMETA(Hidden)
-};
 
 /**
  * Memory relevance/importance levels
@@ -40,6 +21,117 @@ enum class EARPG_MemoryRelevance : uint8
     High            UMETA(DisplayName = "High"),
     Critical        UMETA(DisplayName = "Critical"),
     MAX             UMETA(Hidden)
+};
+
+UENUM(BlueprintType)
+enum class EARPG_MemoryType : uint8
+{
+    // Existing types...
+    Any              UMETA(DisplayName = "Any"),
+    Event            UMETA(DisplayName = "Event"),
+    Entity           UMETA(DisplayName = "Entity"),
+    Location         UMETA(DisplayName = "Location"),
+    
+    // === EXPANDED MEMORY CATEGORIES ===
+    
+    // Combat & Conflict
+    Combat           UMETA(DisplayName = "Combat Memory"),
+    Threat           UMETA(DisplayName = "Threat Memory"),
+    Victory          UMETA(DisplayName = "Victory Memory"),
+    Defeat           UMETA(DisplayName = "Defeat Memory"),
+    Death            UMETA(DisplayName = "Death"),
+    
+    // Social & Emotional
+    Social           UMETA(DisplayName = "Social Memory"),
+    Emotion          UMETA(DisplayName = "Emotional Memory"),
+    Trust            UMETA(DisplayName = "Trust Memory"),
+    Betrayal         UMETA(DisplayName = "Betrayal Memory"),
+    Honor            UMETA(DisplayName = "Honor Memory"),
+    
+    // Knowledge & Learning
+    Academic         UMETA(DisplayName = "Academic Memory"),
+    Magic            UMETA(DisplayName = "Magical Memory"),
+    Craft            UMETA(DisplayName = "Crafting Memory"),
+    Knowledge        UMETA(DisplayName = "Knowledge Memory"),
+    Research         UMETA(DisplayName = "Research Memory"),
+    Technology       UMETA(DisplayName = "Technology Memory"),
+    
+    // Survival & Nature
+    Survival         UMETA(DisplayName = "Survival Memory"),
+    Food             UMETA(DisplayName = "Food Memory"),
+    Territory        UMETA(DisplayName = "Territory Memory"),
+    Hunt             UMETA(DisplayName = "Hunting Memory"),
+    Nature           UMETA(DisplayName = "Nature Memory"),
+    Weather          UMETA(DisplayName = "Weather Memory"),
+    
+    // Cultural & Historical
+    Ancient          UMETA(DisplayName = "Ancient Memory"),
+    Clan             UMETA(DisplayName = "Clan Memory"),
+    Tribe            UMETA(DisplayName = "Tribal Memory"),
+    Culture          UMETA(DisplayName = "Cultural Memory"),
+    Tradition        UMETA(DisplayName = "Tradition Memory"),
+    
+    // Material & Possessions
+    Treasure         UMETA(DisplayName = "Treasure Memory"),
+    Possession       UMETA(DisplayName = "Possession Memory"),
+    Trade            UMETA(DisplayName = "Trade Memory"),
+    
+    // Supernatural & Divine
+    Divine           UMETA(DisplayName = "Divine Memory"),
+    Corruption       UMETA(DisplayName = "Corruption Memory"),
+    Pure             UMETA(DisplayName = "Pure Memory"),
+    Aberrant         UMETA(DisplayName = "Aberrant Memory"),
+    Psychic          UMETA(DisplayName = "Psychic Memory"),
+    
+    // Behavioral Patterns
+    Command          UMETA(DisplayName = "Command Memory"),
+    Task             UMETA(DisplayName = "Task Memory"),
+    Guardian         UMETA(DisplayName = "Guardian Memory"),
+    Deception        UMETA(DisplayName = "Deception Memory"),
+    Adaptation       UMETA(DisplayName = "Adaptation Memory"),
+    
+    // Environmental
+    Water            UMETA(DisplayName = "Water Memory"),
+    Fire             UMETA(DisplayName = "Fire Memory"),
+    Element          UMETA(DisplayName = "Elemental Memory"),
+    Season           UMETA(DisplayName = "Seasonal Memory"),
+    
+    // Social Groups
+    Pack             UMETA(DisplayName = "Pack Memory"),
+    Herd             UMETA(DisplayName = "Herd Memory"),
+    Family           UMETA(DisplayName = "Family Memory"),
+    
+    // Abstract Concepts
+    Dominance        UMETA(DisplayName = "Dominance Memory"),
+    Submission       UMETA(DisplayName = "Submission Memory"),
+    Justice          UMETA(DisplayName = "Justice Memory"),
+    Temptation       UMETA(DisplayName = "Temptation Memory"),
+    Obsession        UMETA(DisplayName = "Obsession Memory"),
+    
+    // Biological & Physical
+    Physical         UMETA(DisplayName = "Physical Memory"),
+    Blood            UMETA(DisplayName = "Blood Memory"),
+    Growth           UMETA(DisplayName = "Growth Memory"),
+    
+    // Special Categories
+    Trivial          UMETA(DisplayName = "Trivial Memory"),
+    Mundane          UMETA(DisplayName = "Mundane Memory"),
+    Normal           UMETA(DisplayName = "Normal Memory"),
+    Cosmic           UMETA(DisplayName = "Cosmic Memory"),
+    Arcane           UMETA(DisplayName = "Arcane Memory"),
+    
+    // Web/Predator specific
+    Web              UMETA(DisplayName = "Web Memory"),
+    Prey             UMETA(DisplayName = "Prey Memory"),
+    
+    // Environmental hazards
+    Sunlight         UMETA(DisplayName = "Sunlight Memory"),
+    Desert           UMETA(DisplayName = "Desert Memory"),
+    
+    // Tactics
+    Tactics          UMETA(DisplayName = "Tactical Memory"),
+    
+    MAX              UMETA(Hidden)
 };
 
 /**

@@ -15,6 +15,7 @@ class UARPG_AIPerceptionComponent;
 class UARPG_AINeedsComponent;
 class UARPG_AIPersonalityComponent;
 class UARPG_AIEventManager;
+class UARPG_AIBehaviorExecutorComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnIntentChanged, const FARPG_AIIntent&, NewIntent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBrainStateChanged, EARPG_BrainState, NewState);
@@ -123,6 +124,8 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Execution")
+    TObjectPtr<UARPG_AIBehaviorExecutorComponent> BehaviorExecutor;
     
     // === DATA TABLE INTEGRATION ===
     

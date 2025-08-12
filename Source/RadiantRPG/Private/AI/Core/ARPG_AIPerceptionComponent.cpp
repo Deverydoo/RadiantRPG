@@ -17,6 +17,11 @@ UARPG_AIPerceptionComponent::UARPG_AIPerceptionComponent()
     PerceptionConfig = FARPG_PerceptionConfiguration();
     PrimaryComponentTick.bCanEverTick = false;
     
+    // Create sense configs in constructor - NOT in BeginPlay/InitializeSenseConfigurations
+    SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
+    HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("HearingConfig"));
+    TouchConfig = CreateDefaultSubobject<UAISenseConfig_Touch>(TEXT("TouchConfig"));
+    
     UE_LOG(LogTemp, Log, TEXT("AIPerceptionComponent: Component created"));
 }
 
@@ -227,9 +232,9 @@ void UARPG_AIPerceptionComponent::InitializeBrainReference()
 
 void UARPG_AIPerceptionComponent::InitializeSenseConfigurations()
 {
-    if (PerceptionConfig.bEnableSight)
+    // Configure existing sense configs created in constructor
+    if (PerceptionConfig.bEnableSight && SightConfig)
     {
-        SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
         SightConfig->SightRadius = PerceptionConfig.SightRadius;
         SightConfig->LoseSightRadius = PerceptionConfig.SightRadius + 100.0f;
         SightConfig->PeripheralVisionAngleDegrees = PerceptionConfig.SightAngle;
@@ -237,25 +242,28 @@ void UARPG_AIPerceptionComponent::InitializeSenseConfigurations()
         SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
         SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
         SightConfig->DetectionByAffiliation.bDetectEnemies = true;
+        
         ConfigureSense(*SightConfig);
     }
     
-    if (PerceptionConfig.bEnableHearing)
+    if (PerceptionConfig.bEnableHearing && HearingConfig)
     {
-        HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("HearingConfig"));
         HearingConfig->HearingRange = PerceptionConfig.HearingRadius;
+        HearingConfig->SetMaxAge(PerceptionConfig.HearingMaxAge);
         HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
         HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
         HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
+        
         ConfigureSense(*HearingConfig);
     }
     
-    if (PerceptionConfig.bEnableTouch)
+    if (PerceptionConfig.bEnableTouch && TouchConfig)
     {
-        TouchConfig = CreateDefaultSubobject<UAISenseConfig_Touch>(TEXT("TouchConfig"));
+        TouchConfig->SetMaxAge(PerceptionConfig.TouchMaxAge);
         TouchConfig->DetectionByAffiliation.bDetectNeutrals = true;
         TouchConfig->DetectionByAffiliation.bDetectFriendlies = true;
         TouchConfig->DetectionByAffiliation.bDetectEnemies = true;
+        
         ConfigureSense(*TouchConfig);
     }
 }

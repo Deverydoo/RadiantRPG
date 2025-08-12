@@ -8,6 +8,126 @@
 #include "Types/ARPG_AITypes.h"
 #include "ARPG_AIDataTableTypes.generated.h"
 
+enum class EARPG_MemoryType : uint8;
+/**
+ * Data table row for Species Memory Configurations
+ * Allows customization of memory settings per creature type/species
+ */
+USTRUCT(BlueprintType)
+struct RADIANTRPG_API FARPG_MemoryConfigRow : public FTableRowBase
+{
+    GENERATED_BODY()
+
+    /** Display name for this memory configuration */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
+    FText DisplayName;
+
+    /** Description of this memory configuration */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
+    FText Description;
+
+    /** Species/creature type this config applies to */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
+    FGameplayTag SpeciesType;
+
+    // === CAPACITY SETTINGS ===
+
+    /** Maximum number of short-term memories per type */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Capacity", meta = (ClampMin = "1", ClampMax = "1000"))
+    int32 MaxShortTermMemories = 50;
+
+    /** Maximum number of long-term memories per type */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Capacity", meta = (ClampMin = "1", ClampMax = "10000"))
+    int32 MaxLongTermMemories = 200;
+
+    // === TIMING SETTINGS ===
+
+    /** How long memories stay in short-term storage (seconds) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Transfer", meta = (ClampMin = "30.0", ClampMax = "3600.0"))
+    float ShortTermDuration = 300.0f;
+
+    /** Minimum strength required for long-term transfer */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Transfer", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float LongTermThreshold = 0.6f;
+
+    /** Strength threshold below which memories are forgotten */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Forgetting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float ForgetThreshold = 0.1f;
+
+    /** How often to update memory decay (seconds) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Performance", meta = (ClampMin = "0.1", ClampMax = "60.0"))
+    float DecayUpdateFrequency = 5.0f;
+
+    // === MEMORY CHARACTERISTICS ===
+
+    /** Base memory decay rate multiplier */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Memory Characteristics", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+    float MemoryDecayRate = 1.0f;
+
+    /** How much emotional events boost memory formation */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Memory Characteristics", meta = (ClampMin = "0.0", ClampMax = "3.0"))
+    float EmotionalMemoryBoost = 1.5f;
+
+    /** Whether this species forms vivid memories easily */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Memory Characteristics")
+    bool bFormsVividMemories = true;
+
+    /** Whether this species can form long-term memories */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Memory Characteristics")
+    bool bCanFormLongTermMemories = true;
+
+    // === INTELLIGENCE FACTORS ===
+
+    /** General intelligence modifier affecting memory quality */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Intelligence", meta = (ClampMin = "0.1", ClampMax = "3.0"))
+    float IntelligenceModifier = 1.0f;
+
+    /** Whether this species learns from experience */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Intelligence")
+    bool bCanLearnFromMemories = true;
+
+    /** Whether memories affect future decision making */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Intelligence")
+    bool bMemoriesInfluenceBehavior = true;
+
+    // === SPECIAL TRAITS ===
+
+    /** Whether to enable debug logging for this species */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+    bool bEnableDebugLogging = false;
+
+    /** Special memory tags this species prioritizes */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Special Traits")
+    TArray<FGameplayTag> PriorityMemoryTags;
+
+    /** Memory types this species tends to ignore */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Special Traits")
+    TArray<EARPG_MemoryType> IgnoredMemoryTypes;
+
+    FARPG_MemoryConfigRow()
+    {
+        DisplayName = FText::FromString(TEXT("Default Memory Config"));
+        Description = FText::FromString(TEXT("Default memory configuration for standard NPCs"));
+        SpeciesType = FGameplayTag::RequestGameplayTag(TEXT("Species.Human"));
+        
+        MaxShortTermMemories = 50;
+        MaxLongTermMemories = 200;
+        ShortTermDuration = 300.0f;
+        LongTermThreshold = 0.6f;
+        ForgetThreshold = 0.1f;
+        DecayUpdateFrequency = 5.0f;
+        MemoryDecayRate = 1.0f;
+        EmotionalMemoryBoost = 1.5f;
+        IntelligenceModifier = 1.0f;
+        
+        bFormsVividMemories = true;
+        bCanFormLongTermMemories = true;
+        bCanLearnFromMemories = true;
+        bMemoriesInfluenceBehavior = true;
+        bEnableDebugLogging = false;
+    }
+};
+
 /**
  * Data table row for AI Brain Configurations
  * Used to configure different NPC types with varying AI behaviors
@@ -57,97 +177,32 @@ struct RADIANTRPG_API FARPG_AIBrainConfigRow : public FTableRowBase
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
     bool bEnableDebugLogging = false;
 
-    /** Maximum number of stimuli to track at once */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Performance", meta = (ClampMin = "5", ClampMax = "50"))
-    int32 MaxTrackedStimuli = 20;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+    int32 MaxTrackedStimuli;
 
-    /** Default idle intent when no other intents are active */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Intents")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
     FGameplayTag DefaultIdleIntent;
 
-    /** Possible curiosity behaviors */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Intents")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
     TArray<FGameplayTag> CuriosityIntents;
 
     FARPG_AIBrainConfigRow()
     {
-        DisplayName = FText::FromString(TEXT("Default Brain"));
-        Description = FText::FromString(TEXT("Basic AI brain configuration"));
+        DisplayName = FText::FromString(TEXT("Default Brain Config"));
+        Description = FText::FromString(TEXT("Default brain configuration for standard NPCs"));
+        NPCType = FGameplayTag::RequestGameplayTag(TEXT("NPC.Type.Human"));
+        
+        BrainUpdateFrequency = 1.0f;
+        StimuliMemoryDuration = 10.0f;
+        CuriosityThreshold = 30.0f;
+        CuriosityStrength = 1.0f;
+        
+        bCanFormMemories = true;
+        bCanLearn = false;
+        bEnableDebugLogging = false;
     }
 };
-
-/**
- * Data table row for AI Personality Trait Templates
- * Used to define personality combinations for different NPC types
- */
-USTRUCT(BlueprintType)
-struct RADIANTRPG_API FARPG_AIPersonalityTraitRow : public FTableRowBase
-{
-    GENERATED_BODY()
-
-    /** Display name for this personality */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
-    FText PersonalityName;
-
-    /** Description of this personality type */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
-    FText Description;
-
-    /** How aggressive this personality is */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float Aggression = 0.5f;
-
-    /** How curious/exploratory this personality is */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float Curiosity = 0.5f;
-
-    /** How social this personality is */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float Sociability = 0.5f;
-
-    /** How brave this personality is */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float Bravery = 0.5f;
-
-    /** How greedy/materialistic this personality is */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float Greed = 0.5f;
-
-    /** How loyal this personality is */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float Loyalty = 0.5f;
-
-    /** How intelligent this personality is */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float Intelligence = 0.5f;
-
-    /** How quickly this personality gets bored (minutes) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Timing", meta = (ClampMin = "1.0", ClampMax = "30.0"))
-    float BoredomThreshold = 5.0f;
-
-    /** How cautious vs reckless this personality is */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float Caution = 0.5f;
-
-    /** How impulsive vs methodical this personality is */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-    float Impulsiveness = 0.5f;
-
-    /** Personality-specific intent preferences */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Behavior")
-    TMap<FGameplayTag, float> IntentBiases;
-
-    FARPG_AIPersonalityTraitRow()
-    {
-        PersonalityName = FText::FromString(TEXT("Balanced"));
-        Description = FText::FromString(TEXT("A well-balanced personality"));
-    }
-};
-
-/**
- * Data table row for AI Needs Configurations
- * Defines how different NPC types handle their basic needs
- */
+ 
 USTRUCT(BlueprintType)
 struct RADIANTRPG_API FARPG_AINeedsConfigRow : public FTableRowBase
 {
@@ -326,3 +381,72 @@ struct RADIANTRPG_API FARPG_FactionDefinitionRow : public FTableRowBase
         FactionColor = FLinearColor(0.5f, 0.5f, 0.5f, 1.0f);
     }
 };
+
+/**
+ * Data table row for AI Personality Trait Templates
+ * Used to define personality combinations for different NPC types
+ */
+USTRUCT(BlueprintType)
+struct RADIANTRPG_API FARPG_AIPersonalityTraitRow : public FTableRowBase
+{
+    GENERATED_BODY()
+
+    /** Display name for this personality */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
+    FText PersonalityName;
+
+    /** Description of this personality type */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Basic")
+    FText Description;
+
+    /** How aggressive this personality is */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float Aggression = 0.5f;
+
+    /** How curious/exploratory this personality is */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float Curiosity = 0.5f;
+
+    /** How social this personality is */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float Sociability = 0.5f;
+
+    /** How brave this personality is */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float Bravery = 0.5f;
+
+    /** How greedy/materialistic this personality is */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float Greed = 0.5f;
+
+    /** How loyal this personality is */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float Loyalty = 0.5f;
+
+    /** How intelligent this personality is */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float Intelligence = 0.5f;
+
+    /** How quickly this personality gets bored (minutes) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Timing", meta = (ClampMin = "1.0", ClampMax = "30.0"))
+    float BoredomThreshold = 5.0f;
+
+    /** How cautious vs reckless this personality is */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float Caution = 0.5f;
+
+    /** How impulsive vs methodical this personality is */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traits", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float Impulsiveness = 0.5f;
+
+    /** Personality-specific intent preferences */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Behavior")
+    TMap<FGameplayTag, float> IntentBiases;
+
+    FARPG_AIPersonalityTraitRow()
+    {
+        PersonalityName = FText::FromString(TEXT("Balanced"));
+        Description = FText::FromString(TEXT("A well-balanced personality"));
+    }
+};
+

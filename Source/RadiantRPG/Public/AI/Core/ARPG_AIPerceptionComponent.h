@@ -40,9 +40,15 @@ struct RADIANTRPG_API FARPG_PerceptionConfiguration
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hearing")
     float HearingRadius = 1000.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hearing")
+    float HearingMaxAge = 1000.0f;
+
     /** Touch radius in cm */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Touch")
     float TouchRadius = 100.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Touch")
+    float TouchMaxAge = 100.0f;
 
     /** Whether to enable sight */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")

@@ -32,6 +32,17 @@ public:
     virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
     // === Event Broadcasting ===
+    /** Register a generic event subscriber (will receive all events) */
+    UFUNCTION(BlueprintCallable, Category = "Event Subscription")
+    void RegisterSubscriber(TScriptInterface<IARPG_EventSubscriber> Subscriber);
+
+    /** Unregister a generic event subscriber */
+    UFUNCTION(BlueprintCallable, Category = "Event Subscription")
+    void UnregisterSubscriber(TScriptInterface<IARPG_EventSubscriber> Subscriber);
+
+    /** Main event delegate that memory components and others can bind to */
+    UPROPERTY(BlueprintAssignable, Category = "Events")
+    FOnAIEventBroadcast OnAnyEvent;
 
     /** Broadcast an AI event to all subscribers */
     UFUNCTION(BlueprintCallable, Category = "AI Events")
@@ -132,10 +143,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Debug")
     FString GetSubscriberDebugInfo() const;
 
-public:
-    /** Main event broadcast delegate - all AI systems can bind to this */
-    UPROPERTY(BlueprintAssignable, Category = "AI Events")
-    FOnAIEventBroadcast OnAnyEvent;
 
 protected:
     // === Configuration ===
