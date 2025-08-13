@@ -9,7 +9,7 @@
 #include "WorldEventManager.generated.h"
 
 class UEventListenerComponent;
-class ARadiantZone;
+class ARadiantZoneManager;
 
 /**
  * Core event manager subsystem - the heartbeat of the world
@@ -56,13 +56,13 @@ public:
 
     // Zone Management
     UFUNCTION(BlueprintCallable, Category = "Event System|Zones")
-    void RegisterZone(ARadiantZone* Zone);
+    void RegisterZone(ARadiantZoneManager* Zone);
 
     UFUNCTION(BlueprintCallable, Category = "Event System|Zones")
-    void UnregisterZone(ARadiantZone* Zone);
+    void UnregisterZone(ARadiantZoneManager* Zone);
 
     UFUNCTION(BlueprintCallable, Category = "Event System|Zones")
-    ARadiantZone* GetZoneAtLocation(FVector Location) const;
+    ARadiantZoneManager* GetZoneAtLocation(FVector Location) const;
 
     // Event Queries
     UFUNCTION(BlueprintCallable, Category = "Event System|Query")
@@ -114,7 +114,7 @@ private:
 
     // Active zones
     UPROPERTY()
-    TArray<TWeakObjectPtr<ARadiantZone>> RegisteredZones;
+    TArray<TWeakObjectPtr<ARadiantZoneManager>> RegisteredZones;
 
     // Currently active events
     UPROPERTY()

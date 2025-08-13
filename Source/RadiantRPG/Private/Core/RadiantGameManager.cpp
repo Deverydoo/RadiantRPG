@@ -1,5 +1,5 @@
 // Private/Core/RadiantGameManager.cpp
-// Game manager implementation for RadiantRPG - central coordinator for all major game systems
+// Game manager implementation for RadiantRPG - simplified without time management
 
 #include "Core/RadiantGameManager.h"
 
@@ -14,13 +14,7 @@
 #include "Misc/DateTime.h"
 #include "GenericPlatform/GenericPlatformMemory.h"
 #include "Stats/StatsHierarchical.h"
-
-// Forward declared system includes - uncomment when systems are implemented
-// #include "World/RadiantWorldManager.h"
-// #include "World/RadiantZoneManager.h"
-// #include "Factions/RadiantFactionManager.h"
-// #include "Economy/RadiantEconomyManager.h"
-// #include "Story/RadiantStoryManager.h"
+#include "World/RadiantWorldManager.h"
 
 URadiantGameManager::URadiantGameManager()
 {
@@ -31,21 +25,18 @@ URadiantGameManager::URadiantGameManager()
     // Initialize settings with defaults
     CurrentGameSettings = FGameSettings();
     
-    // Initialize game state data
+    // Initialize game state data (no more time data)
     GameStateData = FGameStateData();
     
     // Initialize system references
-    //WorldManager = nullptr;
-    //ZoneManager = nullptr;
-    //FactionManager = nullptr;
-    //EconomyManager = nullptr;
-    //StoryManager = nullptr;
+    WorldManager = nullptr;
     
     // Initialize internal state
     bIsInitialized = false;
     bIsShuttingDown = false;
+    LastMemoryWarningTime = 0.0f;
     
-    UE_LOG(LogTemp, Log, TEXT("RadiantGameManager constructed"));
+    UE_LOG(LogTemp, Log, TEXT("RadiantGameManager constructed (simplified - no time management)"));
 }
 
 void URadiantGameManager::Initialize(FSubsystemCollectionBase& Collection)
@@ -55,22 +46,26 @@ void URadiantGameManager::Initialize(FSubsystemCollectionBase& Collection)
     UE_LOG(LogTemp, Log, TEXT("RadiantGameManager initializing..."));
     
     // Set initial game state
-    SetGameState(EGameState::MainMenu);
+    SetGameState(EGameState::Initializing);
     
-    // Initialize game systems
+    // Initialize systems in proper order
     InitializeGameSystems();
     
-    // Setup auto-save
-    SetupAutoSave();
+    // Set up auto-save timer
+    SetupAutoSaveTimer();
     
+    // Mark as initialized
     bIsInitialized = true;
+    
+    // Transition to menu state
+    SetGameState(EGameState::MainMenu);
     
     UE_LOG(LogTemp, Log, TEXT("RadiantGameManager initialization complete"));
 }
 
 void URadiantGameManager::Deinitialize()
 {
-    UE_LOG(LogTemp, Log, TEXT("RadiantGameManager deinitializing..."));
+    UE_LOG(LogTemp, Log, TEXT("RadiantGameManager shutting down..."));
     
     bIsShuttingDown = true;
     
@@ -80,12 +75,15 @@ void URadiantGameManager::Deinitialize()
         World->GetTimerManager().ClearTimer(AutoSaveTimerHandle);
     }
     
-    // Shutdown game systems
+    // Shutdown systems
     ShutdownGameSystems();
+    
+    // Mark as uninitialized
+    bIsInitialized = false;
     
     Super::Deinitialize();
     
-    UE_LOG(LogTemp, Log, TEXT("RadiantGameManager deinitialized"));
+    UE_LOG(LogTemp, Log, TEXT("RadiantGameManager shutdown complete"));
 }
 
 void URadiantGameManager::Tick(float DeltaTime)
@@ -95,16 +93,13 @@ void URadiantGameManager::Tick(float DeltaTime)
         return;
     }
     
-    // Update game time if in playable state
-    if (IsInPlayableState())
-    {
-        UpdateGameTime(DeltaTime);
-    }
+    // Update system health monitoring
+    UpdateSystemHealth(DeltaTime);
 }
 
 bool URadiantGameManager::IsTickable() const
 {
-    return bIsInitialized && !bIsShuttingDown;
+    return bIsInitialized && !bIsShuttingDown && !IsTemplate();
 }
 
 TStatId URadiantGameManager::GetStatId() const
@@ -125,21 +120,85 @@ void URadiantGameManager::SetGameState(EGameState NewState)
     PreviousGameState = CurrentGameState;
     CurrentGameState = NewState;
     
-    UE_LOG(LogTemp, Log, TEXT("Game state changed from %s to %s"), 
-           *UEnum::GetValueAsString(OldState), 
-           *UEnum::GetValueAsString(NewState));
+    UE_LOG(LogTemp, Log, TEXT("GameManager: State changed from %s to %s"), 
+           *GetEnumValueAsString(TEXT("EGameState"), static_cast<int32>(OldState)),
+           *GetEnumValueAsString(TEXT("EGameState"), static_cast<int32>(NewState)));
     
-    // Handle state transition
-    HandleGameStateChange(OldState, NewState);
-    
-    // Broadcast events
+    // Broadcast state change
     OnGameStateChanged.Broadcast(OldState, NewState);
     OnGameStateChangedBP(OldState, NewState);
+    
+    // Handle state-specific logic
+    switch (NewState)
+    {
+        case EGameState::Playing:
+            // Ensure world simulation is active
+            if (WorldManager && !WorldManager->IsWorldSimulationActive())
+            {
+                WorldManager->InitializeWorldSimulation();
+            }
+            break;
+            
+        case EGameState::Paused:
+            // Pause time progression
+            if (WorldManager)
+            {
+                WorldManager->SetTimePaused(true);
+            }
+            break;
+            
+        case EGameState::Loading:
+        case EGameState::Saving:
+            // Keep systems running but prevent new operations
+            break;
+            
+        default:
+            break;
+    }
 }
 
 bool URadiantGameManager::IsInPlayableState() const
 {
-    return CurrentGameState == EGameState::InGame;
+    return CurrentGameState == EGameState::Playing || 
+           CurrentGameState == EGameState::Paused;
+}
+
+// === TIME INTERFACE (DELEGATED TO WORLDMANAGER) ===
+
+FString URadiantGameManager::GetCurrentTimeString() const
+{
+    if (WorldManager)
+    {
+        return WorldManager->GetTimeString();
+    }
+    return TEXT("No Time Manager");
+}
+
+int32 URadiantGameManager::GetCurrentGameDay() const
+{
+    if (WorldManager)
+    {
+        return WorldManager->GetCurrentDay();
+    }
+    return 1;
+}
+
+int32 URadiantGameManager::GetCurrentSeason() const
+{
+    if (WorldManager)
+    {
+        return WorldManager->GetCurrentSeason();
+    }
+    return 1;
+}
+
+bool URadiantGameManager::IsCurrentlyDaytime() const
+{
+    if (WorldManager)
+    {
+        return WorldManager->IsDaytime();
+    }
+    return true; // Default to daytime
 }
 
 // === DIFFICULTY AND SETTINGS ===
@@ -154,13 +213,16 @@ void URadiantGameManager::SetDifficultyLevel(EDifficultyLevel NewDifficulty)
     EDifficultyLevel OldDifficulty = CurrentGameSettings.DifficultyLevel;
     CurrentGameSettings.DifficultyLevel = NewDifficulty;
     
-    UE_LOG(LogTemp, Log, TEXT("Difficulty changed from %s to %s"), 
-           *UEnum::GetValueAsString(OldDifficulty), 
-           *UEnum::GetValueAsString(NewDifficulty));
+    UE_LOG(LogTemp, Log, TEXT("GameManager: Difficulty changed from %s to %s"),
+           *GetEnumValueAsString(TEXT("EDifficultyLevel"), static_cast<int32>(OldDifficulty)),
+           *GetEnumValueAsString(TEXT("EDifficultyLevel"), static_cast<int32>(NewDifficulty)));
     
-    // Broadcast events
+    // Broadcast difficulty change
     OnDifficultyChanged.Broadcast(NewDifficulty);
     OnDifficultyChangedBP(NewDifficulty);
+    
+    // Apply difficulty-specific settings
+    // TODO: Implement difficulty-specific modifications when systems are available
 }
 
 void URadiantGameManager::ApplyGameSettings(const FGameSettings& NewSettings)
@@ -168,10 +230,13 @@ void URadiantGameManager::ApplyGameSettings(const FGameSettings& NewSettings)
     FGameSettings OldSettings = CurrentGameSettings;
     CurrentGameSettings = NewSettings;
     
-    UE_LOG(LogTemp, Log, TEXT("Game settings updated"));
+    UE_LOG(LogTemp, Log, TEXT("GameManager: Game settings applied"));
     
-    // Apply settings to various systems
-    // TODO: Apply settings to world manager, audio system, etc.
+    // Apply auto-save timer changes
+    if (OldSettings.AutoSaveInterval != NewSettings.AutoSaveInterval)
+    {
+        SetupAutoSaveTimer();
+    }
     
     // Broadcast events
     OnGameSettingsChanged.Broadcast(NewSettings);
@@ -290,6 +355,12 @@ bool URadiantGameManager::SaveGame(const FString& SaveSlotName)
         return false;
     }
     
+    if (!IsInPlayableState())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GameManager: Cannot save - not in playable state"));
+        return false;
+    }
+    
     // TODO: Implement save system when available
     UE_LOG(LogTemp, Log, TEXT("GameManager: Save game requested for slot '%s' (not implemented yet)"), *SaveSlotName);
     
@@ -370,40 +441,96 @@ void URadiantGameManager::ResetAllSystems()
 {
     UE_LOG(LogTemp, Log, TEXT("GameManager: Resetting all systems"));
     
-    // Reset game state data
+    // Reset game state data (no more time data)
     GameStateData = FGameStateData();
     
     // Reset settings to defaults
     CurrentGameSettings = FGameSettings();
     
-    // TODO: Reset all subsystems when implemented
-    /*
+    // Reset WorldManager if available
     if (WorldManager)
     {
-        // WorldManager->ResetToDefaults();
+        // Reset to default time
+        WorldManager->SetWorldTime(FSimpleWorldTime());
     }
     
-    if (ZoneManager)
-    {
-        // ZoneManager->ResetToDefaults();
-    }
-    
-    if (FactionManager)
-    {
-        // FactionManager->ResetToDefaults();
-    }
-    
-    if (EconomyManager)
-    {
-        // EconomyManager->ResetToDefaults();
-    }
-    
-    if (StoryManager)
-    {
-        // StoryManager->ResetToDefaults();
-    }
-    */
     UE_LOG(LogTemp, Log, TEXT("GameManager: All systems reset complete"));
+}
+
+bool URadiantGameManager::AreAllSystemsHealthy() const
+{
+    // Check core systems first
+    if (CurrentGameState == EGameState::None || CurrentGameState == EGameState::Error)
+    {
+        return false;
+    }
+
+    // Progressive memory thresholds instead of hard cutoff
+    float MemoryUsageMB = GetMemoryUsageMB();
+    if (MemoryUsageMB > 7168.0f) // 7GB critical threshold
+    {
+        UE_LOG(LogTemp, Error, TEXT("GameManager: Critical memory usage detected: %.2f MB"), MemoryUsageMB);
+        return false;
+    }
+
+    // Check if we're initialized
+    if (!bIsInitialized)
+    {
+        return false;
+    }
+
+    // Check if we're shutting down
+    if (bIsShuttingDown)
+    {
+        return false;
+    }
+
+    // Check WorldManager health
+    if (WorldManager && !WorldManager->IsWorldSimulationActive())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GameManager: WorldManager simulation is not active"));
+        return false;
+    }
+
+    return true;
+}
+
+TMap<FString, FString> URadiantGameManager::GetSystemStatusReport() const
+{
+    TMap<FString, FString> SystemStatus;
+
+    // Core system status
+    SystemStatus.Add(TEXT("GameManager"), bIsInitialized ? TEXT("Healthy") : TEXT("Unhealthy - Not Initialized"));
+    SystemStatus.Add(TEXT("GameState"), GetEnumValueAsString(TEXT("EGameState"), static_cast<int32>(CurrentGameState)));
+
+    // Memory status
+    float MemoryUsageMB = GetMemoryUsageMB();
+    FString MemoryStatus = FString::Printf(TEXT("%.2f MB"), MemoryUsageMB);
+    if (MemoryUsageMB > 4096.0f)
+    {
+        MemoryStatus += TEXT(" - HIGH USAGE WARNING");
+    }
+    SystemStatus.Add(TEXT("Memory"), MemoryStatus);
+
+    // Shutdown status
+    SystemStatus.Add(TEXT("ShutdownState"), bIsShuttingDown ? TEXT("Shutting Down") : TEXT("Running"));
+
+    // WorldManager status
+    if (WorldManager)
+    {
+        bool bWorldHealthy = WorldManager->IsWorldSimulationActive();
+        SystemStatus.Add(TEXT("WorldManager"), bWorldHealthy ? TEXT("Healthy") : TEXT("Unhealthy"));
+        
+        // Add time system status
+        SystemStatus.Add(TEXT("TimeSystem"), WorldManager->IsTimePaused() ? TEXT("Paused") : TEXT("Running"));
+        SystemStatus.Add(TEXT("CurrentTime"), WorldManager->GetFullTimeString());
+    }
+    else
+    {
+        SystemStatus.Add(TEXT("WorldManager"), TEXT("Not Initialized"));
+    }
+
+    return SystemStatus;
 }
 
 // === INTERNAL FUNCTIONS ===
@@ -412,45 +539,22 @@ void URadiantGameManager::InitializeGameSystems()
 {
     UE_LOG(LogTemp, Log, TEXT("GameManager: Initializing game systems..."));
     
-    // Get subsystem references - uncomment when systems are implemented
-    /*
+    // Get subsystem references
     if (UGameInstance* GameInstance = GetGameInstance())
     {
         WorldManager = GameInstance->GetSubsystem<URadiantWorldManager>();
-        ZoneManager = GameInstance->GetSubsystem<URadiantZoneManager>();
-        FactionManager = GameInstance->GetSubsystem<URadiantFactionManager>();
-        EconomyManager = GameInstance->GetSubsystem<URadiantEconomyManager>();
-        StoryManager = GameInstance->GetSubsystem<URadiantStoryManager>();
     }
-    */
-    
+
     // Initialize systems in dependency order
-    /*
     if (WorldManager)
     {
-        WorldManager->Initialize();
+        WorldManager->InitializeWorldSimulation();
+        UE_LOG(LogTemp, Log, TEXT("GameManager: WorldManager initialized"));
     }
-    
-    if (ZoneManager)
+    else
     {
-        ZoneManager->Initialize();
+        UE_LOG(LogTemp, Error, TEXT("GameManager: Failed to get WorldManager subsystem"));
     }
-    
-    if (FactionManager)
-    {
-        FactionManager->Initialize();
-    }
-    
-    if (EconomyManager)
-    {
-        EconomyManager->Initialize();
-    }
-    
-    if (StoryManager)
-    {
-        StoryManager->Initialize();
-    }
-    */
     
     UE_LOG(LogTemp, Log, TEXT("GameManager: Game systems initialization complete"));
 }
@@ -460,110 +564,58 @@ void URadiantGameManager::ShutdownGameSystems()
     UE_LOG(LogTemp, Log, TEXT("GameManager: Shutting down game systems..."));
     
     // Shutdown systems in reverse dependency order
-    /*
-    if (StoryManager)
-    {
-        StoryManager->Shutdown();
-        StoryManager = nullptr;
-    }
-    
-    if (EconomyManager)
-    {
-        EconomyManager->Shutdown();
-        EconomyManager = nullptr;
-    }
-    
-    if (FactionManager)
-    {
-        FactionManager->Shutdown();
-        FactionManager = nullptr;
-    }
-    
-    if (ZoneManager)
-    {
-        ZoneManager->Shutdown();
-        ZoneManager = nullptr;
-    }
-    
     if (WorldManager)
     {
-        WorldManager->Shutdown();
+        WorldManager->ShutdownWorldSimulation();
         WorldManager = nullptr;
+        UE_LOG(LogTemp, Log, TEXT("GameManager: WorldManager shutdown"));
     }
-    */
     
     UE_LOG(LogTemp, Log, TEXT("GameManager: Game systems shutdown complete"));
 }
 
-void URadiantGameManager::HandleGameStateChange(EGameState OldState, EGameState NewState)
+void URadiantGameManager::UpdateSystemHealth(float DeltaTime)
 {
-    UE_LOG(LogTemp, Log, TEXT("GameManager: Handling state transition from %s to %s"), 
-           *UEnum::GetValueAsString(OldState), 
-           *UEnum::GetValueAsString(NewState));
-    
-    // Handle state-specific logic
-    switch (NewState)
+    // Monitor memory usage
+    float MemoryUsageMB = GetMemoryUsageMB();
+    if (MemoryUsageMB > 5120.0f) // 5GB warning threshold  
     {
-        case EGameState::MainMenu:
-            // Stop world simulation
-            // Pause background processing
-            break;
-            
-        case EGameState::Loading:
-            // Start loading screen
-            // Prepare systems for level transition
-            break;
-            
-        case EGameState::InGame:
-            // Start world simulation
-            // Enable full system processing
-            GameStateData.GameTime = 0.0f;
-            GameStateData.GameDay = 1;
-            break;
-            
-        case EGameState::Paused:
-            // Pause world simulation
-            // Reduce system processing
-            break;
-            
-        case EGameState::GameOver:
-            // Stop world simulation
-            // Prepare for restart or exit
-            break;
-            
-        case EGameState::Credits:
-            // Clean up game state
-            break;
-            
-        case EGameState::Options:
-            // No special handling needed
-            break;
-            
-        default:
-            break;
+        // Log warning but don't fail health check immediately
+        float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+        
+        if (CurrentTime - LastMemoryWarningTime > 10.0f) // Throttle warnings to every 10 seconds
+        {
+            UE_LOG(LogTemp, Warning, TEXT("GameManager: High memory usage detected: %.2f MB - performing light cleanup"), MemoryUsageMB);
+            PerformLightMemoryCleanup();
+            LastMemoryWarningTime = CurrentTime;
+        }
     }
 }
 
-void URadiantGameManager::SetupAutoSave()
+void URadiantGameManager::SetupAutoSaveTimer()
 {
-    if (CurrentGameSettings.AutoSaveInterval <= 0.0f)
-    {
-        UE_LOG(LogTemp, Log, TEXT("GameManager: Auto-save disabled"));
-        return;
-    }
-    
+    // Clear existing timer
     if (UWorld* World = GetWorld())
     {
-        World->GetTimerManager().SetTimer(
-            AutoSaveTimerHandle,
-            this,
-            &URadiantGameManager::PerformAutoSave,
-            CurrentGameSettings.AutoSaveInterval * 60.0f, // Convert minutes to seconds
-            true // Loop
-        );
-        
-        UE_LOG(LogTemp, Log, TEXT("GameManager: Auto-save timer set for %.1f minutes"), 
-               CurrentGameSettings.AutoSaveInterval);
+        World->GetTimerManager().ClearTimer(AutoSaveTimerHandle);
+    }
+    
+    // Set up new timer if auto-save is enabled
+    if (CurrentGameSettings.AutoSaveInterval > 0.0f)
+    {
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().SetTimer(
+                AutoSaveTimerHandle,
+                this,
+                &URadiantGameManager::PerformAutoSave,
+                CurrentGameSettings.AutoSaveInterval * 60.0f, // Convert minutes to seconds
+                true // Loop
+            );
+            
+            UE_LOG(LogTemp, Log, TEXT("GameManager: Auto-save timer set for %.1f minutes"), 
+                   CurrentGameSettings.AutoSaveInterval);
+        }
     }
 }
 
@@ -591,399 +643,32 @@ void URadiantGameManager::PerformAutoSave()
     }
 }
 
-void URadiantGameManager::UpdateGameTime(float DeltaTime)
+bool URadiantGameManager::IsSystemHealthy(const FString& SystemName) const
 {
-    GameStateData.GameTime += DeltaTime;
+    // TODO: Implement specific system health checks when systems are available
+    if (SystemName == TEXT("WorldManager"))
+    {
+        return WorldManager && WorldManager->IsWorldSimulationActive();
+    }
     
-    // Update game day based on configured day length
-    static const float SecondsPerDay = 1440.0f; // 24 minutes default
-    int32 NewGameDay = FMath::FloorToInt(GameStateData.GameTime / SecondsPerDay) + 1;
-    
-    if (NewGameDay != GameStateData.GameDay)
-    {
-        GameStateData.GameDay = NewGameDay;
-        UE_LOG(LogTemp, Log, TEXT("GameManager: New game day: %d"), GameStateData.GameDay);
-    }
-}
-
-bool URadiantGameManager::AreAllSystemsHealthy() const
-{
-    // Check core systems first
-    if (CurrentGameState == EGameState::None || CurrentGameState == EGameState::Error)
-    {
-        return false;
-    }
-
-    // Progressive memory thresholds instead of hard cutoff
-    float MemoryUsageMB = GetMemoryUsageMB();
-    if (MemoryUsageMB > 7168.0f) // 7GB critical threshold
-    {
-        UE_LOG(LogTemp, Error, TEXT("GameManager: Critical memory usage detected: %.2f MB"), MemoryUsageMB);
-        return false;
-    }
-    else if (MemoryUsageMB > 5120.0f) // 5GB warning threshold  
-    {
-        // Log warning but don't fail health check immediately
-        static float LastMemoryWarningTime = 0.0f;
-        float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
-        
-        if (CurrentTime - LastMemoryWarningTime > 10.0f) // Throttle warnings to every 10 seconds
-        {
-            UE_LOG(LogTemp, Warning, TEXT("GameManager: High memory usage detected: %.2f MB"), MemoryUsageMB);
-            LastMemoryWarningTime = CurrentTime;
-        }
-    }
-
-    // Check if we're initialized
-    if (!bIsInitialized)
-    {
-        return false;
-    }
-
-    // Check if we're shutting down
-    if (bIsShuttingDown)
-    {
-        return false;
-    }
-
-    // TODO: Check individual system health when systems are implemented
-    /*
-    if (WorldManager && !IsSystemHealthy("WorldManager"))
-    {
-        return false;
-    }
-
-    if (ZoneManager && !IsSystemHealthy("ZoneManager"))
-    {
-        return false;
-    }
-
-    if (FactionManager && !IsSystemHealthy("FactionManager"))
-    {
-        return false;
-    }
-
-    if (EconomyManager && !IsSystemHealthy("EconomyManager"))
-    {
-        return false;
-    }
-
-    if (StoryManager && !IsSystemHealthy("StoryManager"))
-    {
-        return false;
-    }
-    */
-
     return true;
 }
 
-TMap<FString, FString> URadiantGameManager::GetSystemStatusReport() const
+FString URadiantGameManager::GetEnumValueAsString(const FString& EnumName, int32 EnumValue) const
 {
-    TMap<FString, FString> SystemStatus;
-
-    // Core system status
-    SystemStatus.Add(TEXT("GameManager"), bIsInitialized ? TEXT("Healthy") : TEXT("Unhealthy - Not Initialized"));
-    SystemStatus.Add(TEXT("GameState"), GetEnumValueAsString(TEXT("EGameState"), static_cast<int32>(CurrentGameState)));
-
-    // Memory status
-    float MemoryUsageMB = GetMemoryUsageMB();
-    FString MemoryStatus = FString::Printf(TEXT("%.2f MB"), MemoryUsageMB);
-    if (MemoryUsageMB > 4096.0f)
-    {
-        MemoryStatus += TEXT(" - HIGH USAGE WARNING");
-    }
-    SystemStatus.Add(TEXT("Memory"), MemoryStatus);
-
-    // Shutdown status
-    SystemStatus.Add(TEXT("ShutdownState"), bIsShuttingDown ? TEXT("Shutting Down") : TEXT("Running"));
-
-    // TODO: Add individual system status when systems are implemented
-    /*
-    if (WorldManager)
-    {
-        SystemStatus.Add(TEXT("WorldManager"), IsSystemHealthy("WorldManager") ? TEXT("Healthy") : TEXT("Unhealthy"));
-    }
-    else
-    {
-        SystemStatus.Add(TEXT("WorldManager"), TEXT("Not Initialized"));
-    }
-
-    if (ZoneManager)
-    {
-        SystemStatus.Add(TEXT("ZoneManager"), IsSystemHealthy("ZoneManager") ? TEXT("Healthy") : TEXT("Unhealthy"));
-    }
-    else
-    {
-        SystemStatus.Add(TEXT("ZoneManager"), TEXT("Not Initialized"));
-    }
-
-    if (FactionManager)
-    {
-        SystemStatus.Add(TEXT("FactionManager"), IsSystemHealthy("FactionManager") ? TEXT("Healthy") : TEXT("Unhealthy"));
-    }
-    else
-    {
-        SystemStatus.Add(TEXT("FactionManager"), TEXT("Not Initialized"));
-    }
-
-    if (EconomyManager)
-    {
-        SystemStatus.Add(TEXT("EconomyManager"), IsSystemHealthy("EconomyManager") ? TEXT("Healthy") : TEXT("Unhealthy"));
-    }
-    else
-    {
-        SystemStatus.Add(TEXT("EconomyManager"), TEXT("Not Initialized"));
-    }
-
-    if (StoryManager)
-    {
-        SystemStatus.Add(TEXT("StoryManager"), IsSystemHealthy("StoryManager") ? TEXT("Healthy") : TEXT("Unhealthy"));
-    }
-    else
-    {
-        SystemStatus.Add(TEXT("StoryManager"), TEXT("Not Initialized"));
-    }
-    */
-
-    return SystemStatus;
-}
-
-bool URadiantGameManager::IsSystemHealthy(const FString& SystemName) const
-{
-    if (SystemName.IsEmpty())
-    {
-        return false;
-    }
-
-    // Check core systems
-    if (SystemName == TEXT("GameManager"))
-    {
-        return bIsInitialized && !bIsShuttingDown && CurrentGameState != EGameState::Error;
-    }
-
-    if (SystemName == TEXT("Memory"))
-    {
-        return GetMemoryUsageMB() < 4096.0f;
-    }
-
-    // TODO: Add specific system health checks when systems are implemented
-    /*
-    if (SystemName == TEXT("WorldManager"))
-    {
-        return WorldManager && WorldManager->IsHealthy();
-    }
-
-    if (SystemName == TEXT("ZoneManager"))
-    {
-        return ZoneManager && ZoneManager->IsHealthy();
-    }
-
-    if (SystemName == TEXT("FactionManager"))
-    {
-        return FactionManager && FactionManager->IsHealthy();
-    }
-
-    if (SystemName == TEXT("EconomyManager"))
-    {
-        return EconomyManager && EconomyManager->IsHealthy();
-    }
-
-    if (SystemName == TEXT("StoryManager"))
-    {
-        return StoryManager && StoryManager->IsHealthy();
-    }
-    */
-
-    // Unknown system
-    UE_LOG(LogTemp, Warning, TEXT("GameManager: Unknown system name for health check: %s"), *SystemName);
-    return false;
+    // Simple enum to string conversion for debugging
+    return FString::Printf(TEXT("%s_%d"), *EnumName, EnumValue);
 }
 
 void URadiantGameManager::PerformLightMemoryCleanup()
 {
-    // Light cleanup - minimal performance impact
-    CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, false);
+    // Light memory cleanup without full garbage collection
+    UE_LOG(LogTemp, Log, TEXT("GameManager: Elevated memory usage: %.2f MB - performing light cleanup"), GetMemoryUsageMB());
     
-    // Clear texture streaming pool - UE5.5 compatible
-    IStreamingManager::Get().StreamAllResources(0.1f);
-}
-
-void URadiantGameManager::TriggerAIMemoryCleanup()
-{
-    // Find all AI characters and trigger memory cleanup
-    if (UWorld* World = GetWorld())
+    // TODO: Add light cleanup operations
+    // For now, just recommend garbage collection
+    if (GetMemoryUsageMB() > 6144.0f) // 6GB threshold
     {
-        for (TActorIterator<APawn> ActorItr(World); ActorItr; ++ActorItr)
-        {
-            APawn* Pawn = *ActorItr;
-            if (IsValid(Pawn) && !Pawn->IsPlayerControlled())
-            {
-                // Look for AI memory component and trigger cleanup
-                if (UActorComponent* MemoryComp = Pawn->GetComponentByClass(TSubclassOf<UActorComponent>(StaticLoadClass(UActorComponent::StaticClass(), nullptr, TEXT("/Script/YourProject.ARPG_AIMemoryComponent")))))
-                {
-                    // Call cleanup function via reflection or cast to proper type
-                    if (UFunction* CleanupFunc = MemoryComp->FindFunction(FName("CleanupForgottenMemories")))
-                    {
-                        MemoryComp->ProcessEvent(CleanupFunc, nullptr);
-                    }
-                }
-            }
-        }
+        ForceGarbageCollection();
     }
-}
-
-void URadiantGameManager::PerformMemoryCleanup()
-{
-    UE_LOG(LogTemp, Log, TEXT("GameManager: Performing standard memory cleanup"));
-    
-    // Standard cleanup
-    PerformLightMemoryCleanup();
-    
-    // Force full garbage collection
-    ForceGarbageCollection();
-    
-    // Trigger AI memory cleanup for all AI characters
-    TriggerAIMemoryCleanup();
-}
-
-void URadiantGameManager::PerformAggressiveMemoryCleanup()
-{
-    UE_LOG(LogTemp, Warning, TEXT("GameManager: Performing aggressive memory cleanup"));
-    
-    // Aggressive cleanup for critical memory situations
-    PerformMemoryCleanup();
-    
-    // Purge unused assets
-    if (UEngine* Engine = GEngine)
-    {
-        Engine->TrimMemory();
-    }
-    
-    // Reduce texture quality temporarily if needed
-    if (GetMemoryUsageMB() > 5120.0f) // Still above 5GB after cleanup
-    {
-        ReduceTextureQuality();
-    }
-}
-
-
-void URadiantGameManager::ReduceTextureQuality()
-{
-    UE_LOG(LogTemp, Warning, TEXT("GameManager: Temporarily reducing texture quality due to memory pressure"));
-    
-    // Reduce texture streaming pool
-    IConsoleVariable* TexturePoolSizeCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Streaming.PoolSize"));
-    if (TexturePoolSizeCVar)
-    {
-        int32 CurrentPoolSize = TexturePoolSizeCVar->GetInt();
-        int32 ReducedPoolSize = FMath::Max(CurrentPoolSize / 2, 512); // Reduce by half, minimum 512MB
-        TexturePoolSizeCVar->Set(ReducedPoolSize);
-    }
-    
-    // Set timer to restore quality after 30 seconds
-    GetWorld()->GetTimerManager().SetTimer(TextureQualityRestoreHandle, 
-                                         this, &URadiantGameManager::RestoreTextureQuality, 
-                                         30.0f, false);
-}
-
-void URadiantGameManager::RestoreTextureQuality()
-{
-    UE_LOG(LogTemp, Log, TEXT("GameManager: Restoring texture quality"));
-    
-    // Restore texture pool to default
-    IConsoleVariable* TexturePoolSizeCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Streaming.PoolSize"));
-    if (TexturePoolSizeCVar)
-    {
-        TexturePoolSizeCVar->Set(1024); // Default value
-    }
-    
-    GetWorld()->GetTimerManager().ClearTimer(TextureQualityRestoreHandle);
-}
-
-void URadiantGameManager::RefreshSystemHealth()
-{
-    UE_LOG(LogTemp, Verbose, TEXT("GameManager: Refreshing system health status"));
-
-    // Aggressive memory cleanup with graduated thresholds
-    float MemoryUsageMB = GetMemoryUsageMB();
-    
-    if (MemoryUsageMB > 6144.0f) // 6GB - Critical cleanup
-    {
-        UE_LOG(LogTemp, Warning, TEXT("GameManager: Critical memory usage detected: %.2f MB - performing aggressive cleanup"), MemoryUsageMB);
-        PerformAggressiveMemoryCleanup();
-    }
-    else if (MemoryUsageMB > 4096.0f) // 4GB - Standard cleanup
-    {
-        UE_LOG(LogTemp, Warning, TEXT("GameManager: High memory usage detected: %.2f MB - performing cleanup"), MemoryUsageMB);
-        PerformMemoryCleanup();
-    }
-    else if (MemoryUsageMB > 3072.0f) // 3GB - Preventive cleanup
-    {
-        UE_LOG(LogTemp, Log, TEXT("GameManager: Elevated memory usage: %.2f MB - performing preventive cleanup"), MemoryUsageMB);
-        PerformLightMemoryCleanup();
-    }
-
-    // TODO: Refresh individual system health when systems are implemented
-    /*
-    if (WorldManager)
-    {
-        WorldManager->RefreshHealth();
-    }
-
-    if (ZoneManager)
-    {
-        ZoneManager->RefreshHealth();
-    }
-
-    if (FactionManager)
-    {
-        FactionManager->RefreshHealth();
-    }
-
-    if (EconomyManager)
-    {
-        EconomyManager->RefreshHealth();
-    }
-
-    if (StoryManager)
-    {
-        StoryManager->RefreshHealth();
-    }
-    */
-
-    // Only log system status in debug builds or when issues detected
-#if UE_BUILD_DEBUG || UE_BUILD_DEVELOPMENT
-    TMap<FString, FString> SystemStatus = GetSystemStatusReport();
-    for (const auto& StatusPair : SystemStatus)
-    {
-        if (StatusPair.Value.Contains("HIGH") || StatusPair.Value.Contains("Unhealthy"))
-        {
-            UE_LOG(LogTemp, Warning, TEXT("System Status - %s: %s"), *StatusPair.Key, *StatusPair.Value);
-        }
-    }
-#endif
-}
-
-// Helper function for enum to string conversion
-FString URadiantGameManager::GetEnumValueAsString(const FString& EnumName, int32 EnumValue) const
-{
-    // Use StaticEnum<> template function for known enums, or FindFirstObject for dynamic lookup
-    const UEnum* EnumPtr = nullptr;
-    
-    // Try to find the enum using the new recommended approach
-    EnumPtr = FindFirstObject<UEnum>(*EnumName, EFindFirstObjectOptions::ExactClass);
-    
-    if (!EnumPtr)
-    {
-        // Alternative approach: try to find with package context
-        EnumPtr = FindObject<UEnum>(GetTransientPackage(), *EnumName);
-    }
-    
-    if (!EnumPtr)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("GameManager: Could not find enum '%s'"), *EnumName);
-        return FString::Printf(TEXT("Unknown(%d)"), EnumValue);
-    }
-    
-    return EnumPtr->GetNameStringByValue(EnumValue);
 }

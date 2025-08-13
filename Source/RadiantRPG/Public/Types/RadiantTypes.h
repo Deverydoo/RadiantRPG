@@ -6,6 +6,7 @@
 #include "CoreMinimal.h"
 #include "CoreTypes.h"
 #include "GameplayTagContainer.h"
+#include "Types/TimeTypes.h"
 #include "Engine/DataTable.h"
 #include "RadiantTypes.generated.h"
 
@@ -13,14 +14,18 @@
 // ENUMERATIONS
 // ================================================================================
 
+enum class EWeatherType : uint8;
 /** Game states for managing major application flow */
 UENUM(BlueprintType)
 enum class EGameState : uint8
 {
     None            UMETA(DisplayName = "None"),
+    Initializing    UMETA(DisplayName = "Initializing"),
     MainMenu        UMETA(DisplayName = "Main Menu"),
     Loading         UMETA(DisplayName = "Loading"),
     InGame          UMETA(DisplayName = "In Game"),
+    Playing          UMETA(DisplayName = "Playing"),
+    Saving          UMETA(DisplayName = "Saving"),
     Paused          UMETA(DisplayName = "Paused"),
     GameOver        UMETA(DisplayName = "Game Over"),
     Credits         UMETA(DisplayName = "Credits"),
@@ -94,7 +99,7 @@ struct RADIANTRPG_API FWorldEventData
 
     /** Unique event identifier */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
-    FString EventID;
+    int32 EventID;
 
     /** Event type tag */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
@@ -123,10 +128,12 @@ struct RADIANTRPG_API FWorldEventData
     /** Event parameters */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
     TMap<FString, FString> EventParameters;
+    float Duration;
+    float StartTime;
 
     FWorldEventData()
     {
-        EventID = FString();
+        EventID = 0;
         EventRadius = 1000.0f;
         EventStartTime = 0.0f;
         EventDuration = -1.0f;
@@ -236,7 +243,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDifficultyChanged, EDifficultyLev
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGameSettingsChanged, const FGameSettings&, NewSettings);
 
 // World events
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorldTimeChanged, const FWorldTimeData&, NewTimeData);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorldTimeChanged, const FSimpleWorldTime&, NewTimeData);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorldEventStarted, const FWorldEventData&, EventData);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorldEventEnded, const FWorldEventData&, EventData);
@@ -265,11 +272,11 @@ class RADIANTRPG_API URadiantTypeUtils : public UBlueprintFunctionLibrary
 
 public:
     /** Convert time of day enum to approximate hour */
-    UFUNCTION(BlueprintPure, Category = "Time Utils")
+    //UFUNCTION(BlueprintPure, Category = "Time Utils")
     static float TimeOfDayToHour(ETimeOfDay TimeOfDay);
 
     /** Convert hour (0-24) to time of day enum */
-    UFUNCTION(BlueprintPure, Category = "Time Utils")
+    //UFUNCTION(BlueprintPure, Category = "Time Utils")
     static ETimeOfDay HourToTimeOfDay(float Hour);
 
     /** Get weather type display name */

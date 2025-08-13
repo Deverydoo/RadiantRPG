@@ -63,26 +63,6 @@ enum class ERarityTier : uint8
 };
 
 /**
- * Time of day periods for scheduling and AI behavior
- */
-UENUM(BlueprintType)
-enum class ETimeOfDay : uint8
-{
-    Dawn            UMETA(DisplayName = "Dawn"),           // 5-7 AM
-    Morning         UMETA(DisplayName = "Morning"),        // 7-12 PM
-    Noon            UMETA(DisplayName = "Noon"),        // 7-12 PM
-    Midday          UMETA(DisplayName = "Midday"),      // 12-5 PM
-    Dusk            UMETA(DisplayName = "Dusk"),           // 5-7 PM
-    Evening         UMETA(DisplayName = "Evening"),        // 7-10 PM
-    Night           UMETA(DisplayName = "Night"),          // 10 PM - 3 AM
-    LateNight       UMETA(DisplayName = "Late Night"),     // 3-5 AM
-    Midnight        UMETA(DisplayName = "Midnight"),     // 3-5 AM
-    
-    MAX             UMETA(Hidden)
-};
-
-
-/**
  * Basic stat modifier structure
  */
 USTRUCT(BlueprintType)
@@ -239,50 +219,3 @@ struct FWeightedChoice
     }
 };
 
-/** World time data for synchronized time of day */
-USTRUCT(BlueprintType)
-struct RADIANTRPG_API FWorldTimeData
-{
-    GENERATED_BODY()
-
-    /** Game time in seconds since start */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
-    float GameTimeSeconds;
-
-    /** Current day number */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
-    int32 GameDay;
-
-    /** Current time of day category */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
-    ETimeOfDay TimeOfDay;
-
-    /** Time scale multiplier (1.0 = real time) */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
-    float TimeScale;
-    int CurrentDay;
-    bool bTimePaused;
-
-    FWorldTimeData()
-    {
-        GameTimeSeconds = 0.0f;
-        GameDay = 1;
-        TimeOfDay = ETimeOfDay::Dawn;
-        TimeScale = 60.0f; // 60x speed by default
-    }
-
-    /** Get time as hours (0-24) */
-    float GetHours() const
-    {
-        const float SecondsInDay = 86400.0f / TimeScale;
-        float DayProgress = FMath::Fmod(GameTimeSeconds, SecondsInDay) / SecondsInDay;
-        return DayProgress * 24.0f;
-    }
-
-    /** Get time as minutes (0-59) */
-    float GetMinutes() const
-    {
-        float Hours = GetHours();
-        return FMath::Fmod(Hours * 60.0f, 60.0f);
-    }
-};

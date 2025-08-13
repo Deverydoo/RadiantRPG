@@ -9,7 +9,7 @@
 #include "Types/ARPG_AIEventTypes.h"
 #include "Types/ARPG_AIDataTableTypes.h"
 #include "AI/Interfaces/IARPG_EventSubscriber.h"
-#include "World/RadiantZone.h"
+#include "World/RadiantZoneManager.h"
 #include "ARPG_AIMemoryComponent.generated.h"
 
 class UARPG_AIBrainComponent;
@@ -116,7 +116,7 @@ public:
     /** Form location-based memory */
     UFUNCTION(BlueprintCallable, Category = "Memory Formation")
     void FormLocationMemory(FVector Location, FGameplayTag LocationTag, const FString& Description, EARPG_MemoryRelevance Relevance = EARPG_MemoryRelevance::Medium);
-    ARadiantZone* FindZoneAtLocation(FVector Location) const;
+    ARadiantZoneManager* FindZoneAtLocation(FVector Location) const;
     float CalculateLocationDecayRate(FGameplayTag LocationTag, EARPG_MemoryRelevance Relevance) const;
 
     void ReinforceLocationMemory(const FARPG_MemoryEntry& ExistingMemory, float StrengthBoost);

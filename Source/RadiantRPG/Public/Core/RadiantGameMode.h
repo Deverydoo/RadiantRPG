@@ -231,7 +231,7 @@ protected:
     // === PLAYER MANAGEMENT ===
     
     /** Initialize player character */
-    void InitializePlayerCharacter(APlayerCharacter* PlayerCharacter, APlayerController* PlayerController);
+    void InitializePlayerCharacter(const APlayerCharacter* PlayerCharacter, const APlayerController* PlayerController) const;
 
     /** Handle player joining */
     void HandlePlayerJoined(APlayerController* NewPlayer);

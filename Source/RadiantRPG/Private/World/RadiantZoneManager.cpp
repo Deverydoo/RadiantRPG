@@ -1,6 +1,4 @@
-// Source/RadiantRPG/Private/World/RadiantZone.cpp
-
-#include "World/RadiantZone.h"
+#include "World/RadiantZoneManager.h"
 #include "World/WorldEventManager.h"
 #include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
@@ -10,7 +8,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/Character.h"
 
-ARadiantZone::ARadiantZone()
+ARadiantZoneManager::ARadiantZoneManager()
 {
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.TickInterval = 1.0f;
@@ -49,15 +47,15 @@ ARadiantZone::ARadiantZone()
     PossibleWeatherTypes = { EZoneWeather::Clear, EZoneWeather::Cloudy, EZoneWeather::Rain };
 }
 
-void ARadiantZone::BeginPlay()
+void ARadiantZoneManager::BeginPlay()
 {
     Super::BeginPlay();
 
     // Bind overlap events
     if (ZoneBounds)
     {
-        ZoneBounds->OnComponentBeginOverlap.AddDynamic(this, &ARadiantZone::OnZoneBeginOverlap);
-        ZoneBounds->OnComponentEndOverlap.AddDynamic(this, &ARadiantZone::OnZoneEndOverlap);
+        ZoneBounds->OnComponentBeginOverlap.AddDynamic(this, &ARadiantZoneManager::OnZoneBeginOverlap);
+        ZoneBounds->OnComponentEndOverlap.AddDynamic(this, &ARadiantZoneManager::OnZoneEndOverlap);
     }
 
     // Get event manager
@@ -75,7 +73,7 @@ void ARadiantZone::BeginPlay()
             World->GetTimerManager().SetTimer(
                 WeatherUpdateTimer,
                 this,
-                &ARadiantZone::UpdateWeather,
+                &ARadiantZoneManager::UpdateWeather,
                 WeatherUpdateInterval,
                 true
             );
@@ -84,7 +82,7 @@ void ARadiantZone::BeginPlay()
         World->GetTimerManager().SetTimer(
             ResourceUpdateTimer,
             this,
-            &ARadiantZone::UpdateResources,
+            &ARadiantZoneManager::UpdateResources,
             10.0f,
             true
         );
@@ -92,7 +90,7 @@ void ARadiantZone::BeginPlay()
         World->GetTimerManager().SetTimer(
             EventProcessTimer,
             this,
-            &ARadiantZone::ProcessZoneEvents,
+            &ARadiantZoneManager::ProcessZoneEvents,
             5.0f,
             true
         );
@@ -107,7 +105,7 @@ void ARadiantZone::BeginPlay()
     UE_LOG(LogTemp, Log, TEXT("Zone %s initialized"), *ZoneName);
 }
 
-void ARadiantZone::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void ARadiantZoneManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     DeactivateZone();
 
@@ -127,7 +125,7 @@ void ARadiantZone::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
-void ARadiantZone::Tick(float DeltaTime)
+void ARadiantZoneManager::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
@@ -138,7 +136,7 @@ void ARadiantZone::Tick(float DeltaTime)
 }
 
 // Zone Management
-void ARadiantZone::ActivateZone()
+void ARadiantZoneManager::ActivateZone()
 {
     if (bIsActive)
     {
@@ -172,7 +170,7 @@ void ARadiantZone::ActivateZone()
     UE_LOG(LogTemp, Log, TEXT("Zone %s activated"), *ZoneName);
 }
 
-void ARadiantZone::DeactivateZone()
+void ARadiantZoneManager::DeactivateZone()
 {
     if (!bIsActive)
     {
@@ -195,7 +193,7 @@ void ARadiantZone::DeactivateZone()
 }
 
 // Audio Management
-void ARadiantZone::PlayAmbientSound()
+void ARadiantZoneManager::PlayAmbientSound()
 {
     if (!AmbientAudioComponent || !AmbientSound)
     {
@@ -213,7 +211,7 @@ void ARadiantZone::PlayAmbientSound()
     }
 }
 
-void ARadiantZone::StopAmbientSound()
+void ARadiantZoneManager::StopAmbientSound()
 {
     if (AmbientAudioComponent && AmbientAudioComponent->IsPlaying())
     {
@@ -222,7 +220,7 @@ void ARadiantZone::StopAmbientSound()
     }
 }
 
-void ARadiantZone::UpdateAmbientSound()
+void ARadiantZoneManager::UpdateAmbientSound()
 {
     if (!AmbientAudioComponent)
     {
@@ -249,7 +247,7 @@ void ARadiantZone::UpdateAmbientSound()
 }
 
 // Overlap Handlers
-void ARadiantZone::OnZoneBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+void ARadiantZoneManager::OnZoneBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
     UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
     if (!OtherActor || !bIsActive)
@@ -291,7 +289,7 @@ void ARadiantZone::OnZoneBeginOverlap(UPrimitiveComponent* OverlappedComponent, 
         *OtherActor->GetName(), *ZoneName);
 }
 
-void ARadiantZone::OnZoneEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+void ARadiantZoneManager::OnZoneEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
     UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
 {
     if (!OtherActor)
@@ -323,7 +321,7 @@ void ARadiantZone::OnZoneEndOverlap(UPrimitiveComponent* OverlappedComponent, AA
         *OtherActor->GetName(), *ZoneName);
 }
 
-void ARadiantZone::HandlePlayerEntry(AActor* Player)
+void ARadiantZoneManager::HandlePlayerEntry(AActor* Player)
 {
     if (!Player)
     {
@@ -344,7 +342,7 @@ void ARadiantZone::HandlePlayerEntry(AActor* Player)
 }
 
 // Zone Information
-float ARadiantZone::GetZoneRadius() const
+float ARadiantZoneManager::GetZoneRadius() const
 {
     if (ZoneBounds)
     {
@@ -354,7 +352,7 @@ float ARadiantZone::GetZoneRadius() const
     return 5000.0f;
 }
 
-bool ARadiantZone::IsLocationInZone(FVector Location) const
+bool ARadiantZoneManager::IsLocationInZone(FVector Location) const
 {
     if (!ZoneBounds)
     {
@@ -370,7 +368,7 @@ bool ARadiantZone::IsLocationInZone(FVector Location) const
 }
 
 // Event System
-void ARadiantZone::OnEventOccurred(const FWorldEvent& Event)
+void ARadiantZoneManager::OnEventOccurred(const FWorldEvent& Event)
 {
     if (!bIsActive)
     {
@@ -415,7 +413,7 @@ void ARadiantZone::OnEventOccurred(const FWorldEvent& Event)
     ActiveZoneEvents.Add(Event);
 }
 
-void ARadiantZone::TriggerZoneEvent(FGameplayTag EventTag, AActor* InInstigator)
+void ARadiantZoneManager::TriggerZoneEvent(FGameplayTag EventTag, AActor* InInstigator)
 {
     if (!EventManager || !bIsActive)
     {
@@ -425,7 +423,7 @@ void ARadiantZone::TriggerZoneEvent(FGameplayTag EventTag, AActor* InInstigator)
     EventManager->BroadcastZoneEvent(EventTag, ZoneTag, InInstigator);
 }
 
-void ARadiantZone::BroadcastZoneAnnouncement(const FString& Message, EEventPriority Priority)
+void ARadiantZoneManager::BroadcastZoneAnnouncement(const FString& Message, EEventPriority Priority)
 {
     if (!EventManager || !bIsActive)
     {
@@ -446,7 +444,7 @@ void ARadiantZone::BroadcastZoneAnnouncement(const FString& Message, EEventPrior
 }
 
 // Weather System
-void ARadiantZone::SetWeather(EZoneWeather NewWeather)
+void ARadiantZoneManager::SetWeather(EZoneWeather NewWeather)
 {
     if (CurrentWeather != NewWeather)
     {
@@ -496,21 +494,21 @@ void ARadiantZone::SetWeather(EZoneWeather NewWeather)
     }
 }
 
-void ARadiantZone::StartWeatherCycle()
+void ARadiantZoneManager::StartWeatherCycle()
 {
     if (GetWorld() && !WeatherUpdateTimer.IsValid())
     {
         GetWorld()->GetTimerManager().SetTimer(
             WeatherUpdateTimer,
             this,
-            &ARadiantZone::UpdateWeather,
+            &ARadiantZoneManager::UpdateWeather,
             WeatherUpdateInterval,
             true
         );
     }
 }
 
-void ARadiantZone::StopWeatherCycle()
+void ARadiantZoneManager::StopWeatherCycle()
 {
     if (GetWorld() && WeatherUpdateTimer.IsValid())
     {
@@ -519,7 +517,7 @@ void ARadiantZone::StopWeatherCycle()
 }
 
 // Faction System
-void ARadiantZone::SetControllingFaction(FGameplayTag FactionTag)
+void ARadiantZoneManager::SetControllingFaction(FGameplayTag FactionTag)
 {
     if (ControllingFaction != FactionTag)
     {
@@ -552,7 +550,7 @@ void ARadiantZone::SetControllingFaction(FGameplayTag FactionTag)
     }
 }
 
-void ARadiantZone::StartFactionConflict(FGameplayTag AttackingFaction)
+void ARadiantZoneManager::StartFactionConflict(FGameplayTag AttackingFaction)
 {
     if (AttackingFaction != ControllingFaction && AttackingFaction.IsValid())
     {
@@ -576,12 +574,12 @@ void ARadiantZone::StartFactionConflict(FGameplayTag AttackingFaction)
 }
 
 // Resource Management
-void ARadiantZone::SetResourceAvailability(FGameplayTag ResourceType, float Availability)
+void ARadiantZoneManager::SetResourceAvailability(FGameplayTag ResourceType, float Availability)
 {
     ResourceAvailability.Add(ResourceType, FMath::Clamp(Availability, 0.0f, MaxResourceCapacity));
 }
 
-float ARadiantZone::GetResourceAvailability(FGameplayTag ResourceType) const
+float ARadiantZoneManager::GetResourceAvailability(FGameplayTag ResourceType) const
 {
     if (const float* Availability = ResourceAvailability.Find(ResourceType))
     {
@@ -590,7 +588,7 @@ float ARadiantZone::GetResourceAvailability(FGameplayTag ResourceType) const
     return 0.0f;
 }
 
-void ARadiantZone::ConsumeResource(FGameplayTag ResourceType, float Amount)
+void ARadiantZoneManager::ConsumeResource(FGameplayTag ResourceType, float Amount)
 {
     if (float* Availability = ResourceAvailability.Find(ResourceType))
     {
@@ -612,7 +610,7 @@ void ARadiantZone::ConsumeResource(FGameplayTag ResourceType, float Amount)
     }
 }
 
-void ARadiantZone::RegenerateResources()
+void ARadiantZoneManager::RegenerateResources()
 {
     for (auto& Pair : ResourceAvailability)
     {
@@ -622,7 +620,7 @@ void ARadiantZone::RegenerateResources()
 }
 
 // Discovery System
-void ARadiantZone::OnPlayerDiscovered(AActor* Player)
+void ARadiantZoneManager::OnPlayerDiscovered(AActor* Player)
 {
     if (!bIsDiscovered && Player)
     {
@@ -655,12 +653,12 @@ void ARadiantZone::OnPlayerDiscovered(AActor* Player)
 }
 
 // Spawn Management
-void ARadiantZone::SetSpawnRules(const TArray<FGameplayTag>& InAllowedSpawnTypes)
+void ARadiantZoneManager::SetSpawnRules(const TArray<FGameplayTag>& InAllowedSpawnTypes)
 {
     AllowedSpawnTypes = InAllowedSpawnTypes;
 }
 
-void ARadiantZone::SpawnZoneNPC(TSubclassOf<AActor> NPCClass, FVector SpawnLocation)
+void ARadiantZoneManager::SpawnZoneNPC(TSubclassOf<AActor> NPCClass, FVector SpawnLocation)
 {
     if (!NPCClass || SpawnedNPCs.Num() >= MaxNPCsInZone || !bIsActive)
     {
@@ -679,7 +677,7 @@ void ARadiantZone::SpawnZoneNPC(TSubclassOf<AActor> NPCClass, FVector SpawnLocat
     }
 }
 
-void ARadiantZone::DespawnAllNPCs()
+void ARadiantZoneManager::DespawnAllNPCs()
 {
     for (AActor* NPC : SpawnedNPCs)
     {
@@ -692,7 +690,7 @@ void ARadiantZone::DespawnAllNPCs()
 }
 
 // Internal Update Functions
-void ARadiantZone::UpdateWeather()
+void ARadiantZoneManager::UpdateWeather()
 {
     if (!bIsActive || PossibleWeatherTypes.Num() == 0)
     {
@@ -707,7 +705,7 @@ void ARadiantZone::UpdateWeather()
     }
 }
 
-void ARadiantZone::UpdateResources()
+void ARadiantZoneManager::UpdateResources()
 {
     if (!bIsActive)
     {
@@ -717,7 +715,7 @@ void ARadiantZone::UpdateResources()
     RegenerateResources();
 }
 
-void ARadiantZone::ProcessZoneEvents()
+void ARadiantZoneManager::ProcessZoneEvents()
 {
     if (!bIsActive)
     {
@@ -739,7 +737,7 @@ void ARadiantZone::ProcessZoneEvents()
     }
 }
 
-void ARadiantZone::CheckFactionStatus()
+void ARadiantZoneManager::CheckFactionStatus()
 {
     if (!ContestedByFaction.IsValid())
     {

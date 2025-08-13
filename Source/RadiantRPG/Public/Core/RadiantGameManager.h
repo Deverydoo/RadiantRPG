@@ -1,5 +1,5 @@
 // Public/Core/RadiantGameManager.h
-// Game manager for RadiantRPG - central coordinator for all major game systems
+// Game manager for RadiantRPG - central coordinator for all major game systems (simplified)
 
 #pragma once
 
@@ -7,29 +7,18 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "GameplayTagContainer.h"
 #include "Types/RadiantTypes.h"
+#include "World/ISimpleTimeManager.h"
 #include "RadiantGameManager.generated.h"
 
 // Forward declarations
 class URadiantWorldManager;
-class URadiantZoneManager;
-class URadiantFactionManager;
-class URadiantEconomyManager;
-class URadiantStoryManager;
 class ARadiantGameState;
 
-/** Game state data structure for internal management */
+/** Simplified game state data structure - TIME REMOVED (handled by WorldManager) */
 USTRUCT(BlueprintType)
 struct FGameStateData
 {
     GENERATED_BODY()
-
-    /** Current game time in seconds */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game State")
-    float GameTime;
-
-    /** Current game day */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game State")
-    int32 GameDay;
 
     /** Global gameplay flags */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game State")
@@ -45,8 +34,7 @@ struct FGameStateData
 
     FGameStateData()
     {
-        GameTime = 0.0f;
-        GameDay = 1;
+        // No more time data - WorldManager handles this
     }
 };
 
@@ -55,12 +43,13 @@ struct FGameStateData
  * 
  * Responsibilities:
  * - Game state management (menu, loading, playing, paused)
- * - System initialization and coordination
+ * - System initialization and coordination  
  * - Global game settings and difficulty
  * - Cross-system communication hub
  * - Save/Load game state coordination
  * - Performance and system health monitoring
  * 
+ * TIME MANAGEMENT REMOVED: All time operations delegated to WorldManager
  * This is the primary entry point for game-wide operations
  * and ensures proper system initialization order.
  */
@@ -98,23 +87,17 @@ protected:
 
     // === SYSTEM MANAGERS ===
     
-    /** World simulation manager */
-    //UPROPERTY()
-    //TObjectPtr<URadiantWorldManager> WorldManager;
+    /** World simulation manager (also handles time) */
+    UPROPERTY()
+    TObjectPtr<URadiantWorldManager> WorldManager;
 
-    /** Zone and location manager */
-    //UPROPERTY()
-    //TObjectPtr<URadiantZoneManager> ZoneManager;
-
-    /** Faction relationship manager */
+    /** Future system managers (commented until implemented) */
     //UPROPERTY()
     //TObjectPtr<URadiantFactionManager> FactionManager;
 
-    /** Economy simulation manager */
     //UPROPERTY()
     //TObjectPtr<URadiantEconomyManager> EconomyManager;
 
-    /** Dynamic story and event manager */
     //UPROPERTY()
     //TObjectPtr<URadiantStoryManager> StoryManager;
 
@@ -161,13 +144,27 @@ public:
     UFUNCTION(BlueprintPure, Category = "Game State")
     bool IsInPlayableState() const;
 
-    /** Get game time in seconds since game start */
-    UFUNCTION(BlueprintPure, Category = "Game State")
-    float GetGameTime() const { return GameStateData.GameTime; }
+    // === TIME INTERFACE (DELEGATED TO WORLDMANAGER) ===
+    
+    /** Get time manager interface from WorldManager */
+    UFUNCTION(BlueprintPure, Category = "Time System")
+    URadiantWorldManager* GetTimeManager() const { return WorldManager; }
 
-    /** Get current game day */
-    UFUNCTION(BlueprintPure, Category = "Game State")
-    int32 GetGameDay() const { return GameStateData.GameDay; }
+    /** Get current game time (delegated) */
+    UFUNCTION(BlueprintPure, Category = "Time System")
+    FString GetCurrentTimeString() const;
+
+    /** Get current game day (delegated) */
+    UFUNCTION(BlueprintPure, Category = "Time System")
+    int32 GetCurrentGameDay() const;
+
+    /** Get current season (delegated) */
+    UFUNCTION(BlueprintPure, Category = "Time System")
+    int32 GetCurrentSeason() const;
+
+    /** Check if it's daytime (delegated) */
+    UFUNCTION(BlueprintPure, Category = "Time System")
+    bool IsCurrentlyDaytime() const;
 
     // === DIFFICULTY AND SETTINGS ===
     
@@ -224,24 +221,8 @@ public:
     // === SYSTEM ACCESSORS ===
     
     /** Get world manager subsystem */
-    //UFUNCTION(BlueprintPure, Category = "Systems")
-    //URadiantWorldManager* GetWorldManager() const { return WorldManager; }
-
-    /** Get zone manager subsystem */
-    //UFUNCTION(BlueprintPure, Category = "Systems")
-    //URadiantZoneManager* GetZoneManager() const { return ZoneManager; }
-
-    /** Get faction manager subsystem */
-    //UFUNCTION(BlueprintPure, Category = "Systems")
-    //URadiantFactionManager* GetFactionManager() const { return FactionManager; }
-
-    /** Get economy manager subsystem */
-    //UFUNCTION(BlueprintPure, Category = "Systems")
-    //URadiantEconomyManager* GetEconomyManager() const { return EconomyManager; }
-
-    /** Get story manager subsystem */
-    //UFUNCTION(BlueprintPure, Category = "Systems")
-    //URadiantStoryManager* GetStoryManager() const { return StoryManager; }
+    UFUNCTION(BlueprintPure, Category = "Systems")
+    URadiantWorldManager* GetWorldManager() const { return WorldManager; }
 
     // === SAVE/LOAD INTERFACE ===
     
@@ -284,46 +265,10 @@ public:
     bool AreAllSystemsHealthy() const;
 
     /** Get detailed system status report */
-    UFUNCTION(BlueprintPure, Category = "System Health") 
+    UFUNCTION(BlueprintPure, Category = "System Health")
     TMap<FString, FString> GetSystemStatusReport() const;
 
-    /** Check if specific system is healthy */
-    UFUNCTION(BlueprintPure, Category = "System Health")
-    bool IsSystemHealthy(const FString& SystemName) const;
-    void PerformLightMemoryCleanup();
-    void TriggerAIMemoryCleanup();
-
-    void PerformMemoryCleanup();
-    void PerformAggressiveMemoryCleanup();
-    void ReduceTextureQuality();
-    void RestoreTextureQuality();
-    /** Force refresh system health status */
-    UFUNCTION(BlueprintCallable, Category = "System Health")
-    void RefreshSystemHealth();
-    FString GetEnumValueAsString(const FString& EnumName, int32 EnumValue) const;
-
 protected:
-    // === INTERNAL FUNCTIONS ===
-    
-    /** Initialize all game systems in proper order */
-    void InitializeGameSystems();
-
-    /** Shutdown all game systems */
-    void ShutdownGameSystems();
-
-    /** Handle game state transitions */
-    void HandleGameStateChange(EGameState OldState, EGameState NewState);
-
-    /** Setup auto-save timer */
-    void SetupAutoSave();
-
-    /** Perform auto-save */
-    UFUNCTION()
-    void PerformAutoSave();
-
-    /** Update game time */
-    void UpdateGameTime(float DeltaTime);
-
     // === BLUEPRINT EVENTS ===
     
     UFUNCTION(BlueprintImplementableEvent, Category = "Game Events")
@@ -338,6 +283,33 @@ protected:
     UFUNCTION(BlueprintImplementableEvent, Category = "Game Events")
     void OnGlobalFlagChangedBP(FGameplayTag Flag, bool bValue);
 
+    // === INTERNAL FUNCTIONS ===
+    
+    /** Initialize game systems in proper order */
+    void InitializeGameSystems();
+
+    /** Shutdown game systems */
+    void ShutdownGameSystems();
+
+    /** Update system health monitoring */
+    void UpdateSystemHealth(float DeltaTime);
+
+    /** Setup auto-save timer */
+    void SetupAutoSaveTimer();
+
+    /** Perform automatic save */
+    void PerformAutoSave();
+
+    /** Check system health by name */
+    bool IsSystemHealthy(const FString& SystemName) const;
+
+    /** Get enum value as string for debugging */
+    FString GetEnumValueAsString(const FString& EnumName, int32 EnumValue) const;
+
+    /** Memory cleanup when usage is high */
+    void PerformLightMemoryCleanup();
+
 private:
-    FTimerHandle TextureQualityRestoreHandle;
+    /** Last memory warning time for throttling */
+    float LastMemoryWarningTime = 0.0f;
 };

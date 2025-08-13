@@ -477,7 +477,7 @@ void ARadiantGameMode::CompleteWorldInitialization()
 
 // === PLAYER MANAGEMENT ===
 
-void ARadiantGameMode::InitializePlayerCharacter(APlayerCharacter* PlayerCharacter, APlayerController* PlayerController)
+void ARadiantGameMode::InitializePlayerCharacter(const APlayerCharacter* PlayerCharacter, const APlayerController* PlayerController) const
 {
     if (!PlayerCharacter || !PlayerController)
     {
@@ -701,14 +701,14 @@ void ARadiantGameMode::InitializeWorldEvents()
         LogGameModeStatus(TEXT("Dynamic events disabled - skipping world events initialization"));
         return;
     }
-    
-    // TODO: Initialize world event system
-    // if (WorldEventManager)
-    // {
-    //     WorldEventManager->InitializeEventGeneration();
-    //     WorldEventManager->StartEventGeneration();
-    // }
-    
+
+    /*
+    if (WorldEventManager)
+    {
+        WorldEventManager->InitializeEventGeneration();
+        WorldEventManager->StartEventGeneration();
+    }
+    */
     LogGameModeStatus(TEXT("World events system initialization placeholder completed"));
 }
 
@@ -907,12 +907,6 @@ void ARadiantGameMode::CheckMemoryRecoveryStatus()
         else
         {
             UE_LOG(LogTemp, Warning, TEXT("Memory recovery insufficient: %.2f MB - may need manual intervention"), PostRecoveryMemory);
-            
-            // If still high, try one more aggressive cleanup
-            if (PostRecoveryMemory > 6144.0f)
-            {
-                GM->PerformAggressiveMemoryCleanup();
-            }
         }
     }
     
@@ -922,33 +916,6 @@ void ARadiantGameMode::CheckMemoryRecoveryStatus()
 bool ARadiantGameMode::AttemptSystemRecovery(const FString& SystemName)
 {
     UE_LOG(LogTemp, Warning, TEXT("Attempting recovery for system: %s"), *SystemName);
-    
-    if (SystemName == TEXT("Memory"))
-    {
-        if (URadiantGameManager* GM = Cast<URadiantGameManager>(GameManager))
-        {
-            // Try progressive memory cleanup
-            float MemoryUsageMB = GM->GetMemoryUsageMB();
-            
-            if (MemoryUsageMB > 6144.0f) // 6GB - Aggressive cleanup
-            {
-                GM->PerformAggressiveMemoryCleanup();
-            }
-            else if (MemoryUsageMB > 4096.0f) // 4GB - Standard cleanup  
-            {
-                GM->PerformMemoryCleanup();
-            }
-            else
-            {
-                GM->PerformLightMemoryCleanup();
-            }
-            
-            // Schedule follow-up check in 10 seconds
-            GetWorldTimerManager().SetTimer(MemoryRecoveryCheckHandle,
-                                          this, &ARadiantGameMode::CheckMemoryRecoveryStatus,
-                                          10.0f, false);
-        }
-    }
     
     // TODO: Add recovery logic for other systems when implemented
     /*

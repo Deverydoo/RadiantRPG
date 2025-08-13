@@ -2,7 +2,7 @@
 
 #include "World/WorldEventManager.h"
 #include "World/EventListenerComponent.h"
-#include "World/RadiantZone.h"
+#include "World/RadiantZoneManager.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
@@ -151,7 +151,7 @@ void UWorldEventManager::BroadcastZoneEvent(FGameplayTag EventTag, FGameplayTag 
     // Find the zone and set location
     for (const auto& ZonePtr : RegisteredZones)
     {
-        if (ARadiantZone* Zone = ZonePtr.Get())
+        if (ARadiantZoneManager* Zone = ZonePtr.Get())
         {
             if (Zone->GetZoneTag() == ZoneTag)
             {
@@ -264,7 +264,7 @@ void UWorldEventManager::UnregisterListener(UEventListenerComponent* Listener)
     });
 }
 
-void UWorldEventManager::RegisterZone(ARadiantZone* Zone)
+void UWorldEventManager::RegisterZone(ARadiantZoneManager* Zone)
 {
     if (Zone && !RegisteredZones.Contains(Zone))
     {
@@ -273,19 +273,19 @@ void UWorldEventManager::RegisterZone(ARadiantZone* Zone)
     }
 }
 
-void UWorldEventManager::UnregisterZone(ARadiantZone* Zone)
+void UWorldEventManager::UnregisterZone(ARadiantZoneManager* Zone)
 {
-    RegisteredZones.RemoveAll([Zone](const TWeakObjectPtr<ARadiantZone>& WeakZone)
+    RegisteredZones.RemoveAll([Zone](const TWeakObjectPtr<ARadiantZoneManager>& WeakZone)
     {
         return !WeakZone.IsValid() || WeakZone.Get() == Zone;
     });
 }
 
-ARadiantZone* UWorldEventManager::GetZoneAtLocation(FVector Location) const
+ARadiantZoneManager* UWorldEventManager::GetZoneAtLocation(FVector Location) const
 {
     for (const auto& ZonePtr : RegisteredZones)
     {
-        if (ARadiantZone* Zone = ZonePtr.Get())
+        if (ARadiantZoneManager* Zone = ZonePtr.Get())
         {
             if (Zone->IsLocationInZone(Location))
             {
@@ -451,7 +451,7 @@ void UWorldEventManager::NotifyListenersInRange(const FWorldEvent& Event)
 void UWorldEventManager::NotifyZones(const FWorldEvent& Event)
 {
     // Clean up invalid zones
-    RegisteredZones.RemoveAll([](const TWeakObjectPtr<ARadiantZone>& WeakZone)
+    RegisteredZones.RemoveAll([](const TWeakObjectPtr<ARadiantZoneManager>& WeakZone)
     {
         return !WeakZone.IsValid();
     });
@@ -459,7 +459,7 @@ void UWorldEventManager::NotifyZones(const FWorldEvent& Event)
     // Notify relevant zones
     for (const auto& ZonePtr : RegisteredZones)
     {
-        if (ARadiantZone* Zone = ZonePtr.Get())
+        if (ARadiantZoneManager* Zone = ZonePtr.Get())
         {
             // Check if event is within zone or is a zone-wide event
             if (Event.Scope == EEventScope::Global ||
@@ -556,7 +556,7 @@ bool UWorldEventManager::ShouldListenerReceiveEvent(UEventListenerComponent* Lis
     // Zone events
     if (Event.Scope == EEventScope::Zone)
     {
-        ARadiantZone* ListenerZone = GetZoneAtLocation(
+        ARadiantZoneManager* ListenerZone = GetZoneAtLocation(
             Listener->GetOwner()->GetActorLocation()
         );
         

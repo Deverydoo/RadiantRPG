@@ -7,7 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "Types/EventTypes.h"
 #include "Types/WorldTypes.h"
-#include "RadiantZone.generated.h"
+#include "RadiantZoneManager.generated.h"
 
 class UBoxComponent;
 class USphereComponent;
@@ -18,12 +18,12 @@ class UWorldEventManager;
  * Represents a zone in the world with its own rules and events
  */
 UCLASS()
-class RADIANTRPG_API ARadiantZone : public AActor
+class RADIANTRPG_API ARadiantZoneManager : public AActor
 {
     GENERATED_BODY()
 
 public:
-    ARadiantZone();
+    ARadiantZoneManager();
 
 protected:
     virtual void BeginPlay() override;

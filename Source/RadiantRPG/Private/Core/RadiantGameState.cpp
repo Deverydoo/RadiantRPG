@@ -1,8 +1,9 @@
 // Private/Core/RadiantGameState.cpp
-// Game state implementation for RadiantRPG - manages replicated world state
+// Game state implementation for RadiantRPG - manages replicated world state (updated for simplified time)
 
 #include "Core/RadiantGameState.h"
 #include "Core/RadiantGameManager.h"
+#include "World/RadiantWorldManager.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
@@ -14,40 +15,34 @@ ARadiantGameState::ARadiantGameState()
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.TickInterval = 1.0f; // Update every second for world state
 
-    // Initialize world time
-    WorldTime = FWorldTimeData();
-    SecondsPerGameDay = 1440.0f; // 24 minutes = 1 game day (60x speed)
-    bAutoUpdateTimeOfDay = true;
-
-    // TODO: Initialize weather system when implemented
-    // WorldWeather = FWorldWeatherData();
-    // bDynamicWeather = true;
-    // WeatherChangeChance = 0.05f; // 5% chance per minute
+    // Initialize simplified world time
+    WorldTime = FSimpleWorldTime();
+    bTimeProgressionEnabled = true;
 
     // Initialize event system
     MaxConcurrentEvents = 10;
 
     // Initialize references
     GameManager = nullptr;
+    WorldManager = nullptr;
 
     // Initialize internal state
-    // TODO: Weather placeholders
-    // LastWeatherUpdateTime = 0.0f;
     LastEventUpdateTime = 0.0f;
     NextEventID = 1;
     bGameStateInitialized = false;
 
-    UE_LOG(LogTemp, Log, TEXT("RadiantGameState constructed"));
+    UE_LOG(LogTemp, Log, TEXT("RadiantGameState constructed with simplified time system"));
 }
 
 void ARadiantGameState::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Cache game manager reference using UE 5.5 method
+    // Cache manager references using UE 5.5 method
     if (UGameInstance* GameInstance = GetGameInstance())
     {
         GameManager = GameInstance->GetSubsystem<URadiantGameManager>();
+        WorldManager = GameInstance->GetSubsystem<URadiantWorldManager>();
     }
 
     // Initialize world state if we're the authority
@@ -57,20 +52,19 @@ void ARadiantGameState::BeginPlay()
     }
 
     bGameStateInitialized = true;
-    UE_LOG(LogTemp, Log, TEXT("RadiantGameState BeginPlay completed"));
+    UE_LOG(LogTemp, Log, TEXT("RadiantGameState BeginPlay completed - %s"), 
+           HasAuthority() ? TEXT("Authority") : TEXT("Client"));
 }
 
 void ARadiantGameState::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    bGameStateInitialized = false;
     UE_LOG(LogTemp, Log, TEXT("RadiantGameState EndPlay"));
+    
+    // Clear references
+    GameManager = nullptr;
+    WorldManager = nullptr;
+    
     Super::EndPlay(EndPlayReason);
-}
-
-void ARadiantGameState::PostInitializeComponents()
-{
-    Super::PostInitializeComponents();
-    UE_LOG(LogTemp, Log, TEXT("RadiantGameState PostInitializeComponents"));
 }
 
 void ARadiantGameState::Tick(float DeltaTime)
@@ -78,16 +72,14 @@ void ARadiantGameState::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
 
     if (!bGameStateInitialized)
+    {
         return;
+    }
 
-    // Only update on authority
+    // Only authority updates world state
     if (HasAuthority())
     {
-        UpdateWorldTime(DeltaTime);
-        UpdateWorldEvents(DeltaTime);
-        
-        // TODO: Weather updates when system is implemented
-        // UpdateWorldWeather(DeltaTime);
+        UpdateWorldState(DeltaTime);
     }
 }
 
@@ -95,50 +87,41 @@ void ARadiantGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+    // Replicate world time
     DOREPLIFETIME(ARadiantGameState, WorldTime);
-    // TODO: Weather replication when implemented
-    // DOREPLIFETIME(ARadiantGameState, WorldWeather);
-    DOREPLIFETIME(ARadiantGameState, KnownFactions);
+    DOREPLIFETIME(ARadiantGameState, bTimeProgressionEnabled);
+
+    // Replicate world events
     DOREPLIFETIME(ARadiantGameState, ActiveWorldEvents);
+
+    // Replicate global state
     DOREPLIFETIME(ARadiantGameState, GlobalFlags);
+    DOREPLIFETIME(ARadiantGameState, GlobalVariables);
+    DOREPLIFETIME(ARadiantGameState, GlobalStrings);
+
+    // Replicate faction data
     DOREPLIFETIME(ARadiantGameState, ActiveWars);
 }
 
-// === INTERNAL INITIALIZATION ===
+// === WORLD TIME INTERFACE (DELEGATED TO WORLDMANAGER) ===
 
-void ARadiantGameState::InitializeWorldState()
+void ARadiantGameState::SetWorldTime(const FSimpleWorldTime& NewTimeData)
 {
     if (!HasAuthority())
         return;
 
-    // Initialize time system
-    WorldTime.GameTimeSeconds = 0.0f;
-    WorldTime.GameDay = 1;
-    WorldTime.TimeOfDay = ETimeOfDay::Dawn;
-    WorldTime.TimeScale = 60.0f; // 60x speed
-
-    // Initialize faction system
-    InitializeKnownFactions();
-
-    // Clear any existing world events
-    ActiveWorldEvents.Empty();
-    ActiveWars.Empty();
-
-    UE_LOG(LogTemp, Log, TEXT("World state initialized"));
-}
-
-// === WORLD TIME IMPLEMENTATION ===
-
-void ARadiantGameState::SetWorldTime(const FWorldTimeData& NewTimeData)
-{
-    if (!HasAuthority())
-        return;
-
-    WorldTime = NewTimeData;
-    UpdateTimeOfDay();
-    
-    OnWorldTimeChanged.Broadcast(WorldTime);
-    OnWorldTimeChangedBP(WorldTime);
+    // Delegate to WorldManager if available
+    if (WorldManager)
+    {
+        WorldManager->SetWorldTime(NewTimeData);
+        // WorldManager will update our replicated state
+    }
+    else
+    {
+        // Fallback: update replicated state directly
+        WorldTime = NewTimeData;
+        OnRep_WorldTime();
+    }
 }
 
 void ARadiantGameState::AddWorldTime(float SecondsToAdd)
@@ -146,21 +129,16 @@ void ARadiantGameState::AddWorldTime(float SecondsToAdd)
     if (!HasAuthority())
         return;
 
-    WorldTime.GameTimeSeconds += SecondsToAdd;
-    
-    // Check for day transitions
-    float SecondsInDay = SecondsPerGameDay;
-    if (SecondsInDay > 0.0f)
+    // Delegate to WorldManager if available
+    if (WorldManager)
     {
-        int32 NewDay = FMath::FloorToInt(WorldTime.GameTimeSeconds / SecondsInDay) + 1;
-        if (NewDay != WorldTime.GameDay)
-        {
-            WorldTime.GameDay = NewDay;
-            UE_LOG(LogTemp, Log, TEXT("New game day: %d"), WorldTime.GameDay);
-        }
+        WorldManager->AdvanceTime(SecondsToAdd);
+        // WorldManager will update our replicated state
     }
-
-    UpdateTimeOfDay();
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AddWorldTime called but WorldManager not available"));
+    }
 }
 
 void ARadiantGameState::SetTimeScale(float NewTimeScale)
@@ -168,8 +146,15 @@ void ARadiantGameState::SetTimeScale(float NewTimeScale)
     if (!HasAuthority())
         return;
 
-    WorldTime.TimeScale = FMath::Max(0.1f, NewTimeScale);
-    UE_LOG(LogTemp, Log, TEXT("Time scale set to: %.2f"), WorldTime.TimeScale);
+    // Delegate to WorldManager if available
+    if (WorldManager)
+    {
+        WorldManager->SetTimeScale(NewTimeScale);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SetTimeScale called but WorldManager not available"));
+    }
 }
 
 void ARadiantGameState::SetTimePaused(bool bPaused)
@@ -177,480 +162,414 @@ void ARadiantGameState::SetTimePaused(bool bPaused)
     if (!HasAuthority())
         return;
 
-    // Store the pause state in time scale (0 = paused)
-    if (bPaused && WorldTime.TimeScale > 0.0f)
+    // Delegate to WorldManager if available
+    if (WorldManager)
     {
-        // Store previous scale and pause
-        // For now, we'll just set to very small value instead of 0
-        WorldTime.TimeScale = 0.001f;
+        WorldManager->SetTimePaused(bPaused);
+        bTimeProgressionEnabled = !bPaused;
     }
-    else if (!bPaused && WorldTime.TimeScale <= 0.001f)
+    else
     {
-        // Resume with default scale
-        WorldTime.TimeScale = 60.0f;
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("Time %s"), bPaused ? TEXT("paused") : TEXT("resumed"));
-}
-
-float ARadiantGameState::GetTimeOfDayFloat() const
-{
-    if (SecondsPerGameDay <= 0.0f)
-        return 0.0f;
-
-    return FMath::Fmod(WorldTime.GameTimeSeconds, SecondsPerGameDay) / SecondsPerGameDay;
-}
-
-bool ARadiantGameState::IsDaytime() const
-{
-    switch (WorldTime.TimeOfDay)
-    {
-        case ETimeOfDay::Dawn:
-        case ETimeOfDay::Morning:
-        case ETimeOfDay::Midday:
-        case ETimeOfDay::Noon:
-            return true;
-        default:
-            return false;
+        UE_LOG(LogTemp, Warning, TEXT("SetTimePaused called but WorldManager not available"));
     }
 }
 
-bool ARadiantGameState::IsNighttime() const
+void ARadiantGameState::SyncTimeFromWorldManager()
 {
-    return !IsDaytime();
-}
-
-void ARadiantGameState::UpdateWorldTime(float DeltaTime)
-{
-    if (!bAutoUpdateTimeOfDay || WorldTime.TimeScale <= 0.0f)
+    if (!HasAuthority() || !WorldManager)
         return;
 
-    // Update game time
-    float PreviousTime = WorldTime.GameTimeSeconds;
-    WorldTime.GameTimeSeconds += DeltaTime * WorldTime.TimeScale;
-
-    // Check for day transitions
-    if (SecondsPerGameDay > 0.0f)
+    // Sync our replicated time with WorldManager's authoritative time
+    FSimpleWorldTime NewTime = WorldManager->GetWorldTime();
+    if (WorldTime.Season != NewTime.Season || 
+        WorldTime.Day != NewTime.Day || 
+        WorldTime.Hour != NewTime.Hour || 
+        WorldTime.Minute != NewTime.Minute)
     {
-        int32 PreviousDay = FMath::FloorToInt(PreviousTime / SecondsPerGameDay) + 1;
-        int32 CurrentDay = FMath::FloorToInt(WorldTime.GameTimeSeconds / SecondsPerGameDay) + 1;
+        WorldTime = NewTime;
+        bTimeProgressionEnabled = !WorldManager->IsTimePaused();
         
-        if (CurrentDay != PreviousDay)
-        {
-            WorldTime.GameDay = CurrentDay;
-            UE_LOG(LogTemp, Log, TEXT("Day changed to: %d"), WorldTime.GameDay);
-        }
-    }
-
-    // Update time of day
-    ETimeOfDay PreviousTimeOfDay = WorldTime.TimeOfDay;
-    UpdateTimeOfDay();
-
-    // Broadcast time changes
-    if (PreviousTimeOfDay != WorldTime.TimeOfDay)
-    {
-        OnWorldTimeChanged.Broadcast(WorldTime);
-        OnWorldTimeChangedBP(WorldTime);
+        // Force replication update
+        OnRep_WorldTime();
     }
 }
 
-void ARadiantGameState::UpdateTimeOfDay()
-{
-    ETimeOfDay NewTimeOfDay = CalculateTimeOfDay(WorldTime.GameTimeSeconds);
-    if (NewTimeOfDay != WorldTime.TimeOfDay)
-    {
-        WorldTime.TimeOfDay = NewTimeOfDay;
-    }
-}
+// === WORLD EVENTS INTERFACE ===
 
-ETimeOfDay ARadiantGameState::CalculateTimeOfDay(float GameTimeSeconds) const
-{
-    if (SecondsPerGameDay <= 0.0f)
-        return ETimeOfDay::Dawn;
-
-    float TimeOfDayFloat = FMath::Fmod(GameTimeSeconds, SecondsPerGameDay) / SecondsPerGameDay;
-    
-    if (TimeOfDayFloat < 0.125f)        // 0-3 hours (midnight-3am)
-        return ETimeOfDay::Midnight;
-    else if (TimeOfDayFloat < 0.25f)    // 3-6 hours (3am-6am)
-        return ETimeOfDay::Night;
-    else if (TimeOfDayFloat < 0.375f)   // 6-9 hours (6am-9am)
-        return ETimeOfDay::Dawn;
-    else if (TimeOfDayFloat < 0.5f)     // 9-12 hours (9am-noon)
-        return ETimeOfDay::Morning;
-    else if (TimeOfDayFloat < 0.625f)   // 12-15 hours (noon-3pm)
-        return ETimeOfDay::Noon;
-    else if (TimeOfDayFloat < 0.75f)    // 15-18 hours (3pm-6pm)
-        return ETimeOfDay::Midday;
-    else if (TimeOfDayFloat < 0.875f)   // 18-21 hours (6pm-9pm)
-        return ETimeOfDay::Dusk;
-    else                                // 21-24 hours (9pm-midnight)
-        return ETimeOfDay::Evening;
-}
-
-// === FACTION SYSTEM IMPLEMENTATION ===
-
-float ARadiantGameState::GetFactionRelationship(FGameplayTag FactionA, FGameplayTag FactionB) const
-{
-    const FFactionRelationshipData& Relationship = FindFactionRelationship(FactionA, FactionB);
-    return Relationship.ReputationValue;
-}
-
-void ARadiantGameState::SetFactionRelationship(FGameplayTag FactionA, FGameplayTag FactionB, float RelationshipValue)
+void ARadiantGameState::AddWorldEvent(const FWorldEventData& EventData)
 {
     if (!HasAuthority())
         return;
 
-    FString Key = GetFactionRelationshipKey(FactionA, FactionB);
-    
-    FFactionRelationshipData* Relationship = FactionRelationships.Find(Key);
-    if (!Relationship)
-    {
-        // Create new relationship
-        FFactionRelationshipData NewRelationship;
-        NewRelationship.ReputationValue = RelationshipValue;
-        FactionRelationships.Add(Key, NewRelationship);
-        Relationship = &FactionRelationships[Key];
-    }
-    else
-    {
-        Relationship->ReputationValue = RelationshipValue;
-    }
-
-    // Update relationship enum based on value
-    if (RelationshipValue <= -75.0f)
-        Relationship->Relationship = EFactionRelationship::Enemy;
-    else if (RelationshipValue <= -25.0f)
-        Relationship->Relationship = EFactionRelationship::Hostile;
-    else if (RelationshipValue <= -5.0f)
-        Relationship->Relationship = EFactionRelationship::Unfriendly;
-    else if (RelationshipValue <= 5.0f)
-        Relationship->Relationship = EFactionRelationship::Neutral;
-    else if (RelationshipValue <= 25.0f)
-        Relationship->Relationship = EFactionRelationship::Friendly;
-    else
-        Relationship->Relationship = EFactionRelationship::Allied;
-
-    // Broadcast relationship change
-    OnFactionRelationshipChanged.Broadcast(FactionA, FactionB);
-    OnFactionRelationshipChangedBP(FactionA, FactionB, RelationshipValue);
-
-    UE_LOG(LogTemp, Log, TEXT("Faction relationship updated: %s <-> %s = %.2f"), 
-           *FactionA.ToString(), *FactionB.ToString(), RelationshipValue);
-}
-
-const FFactionRelationshipData& ARadiantGameState::FindFactionRelationship(FGameplayTag FactionA, FGameplayTag FactionB) const
-{
-    FString Key = GetFactionRelationshipKey(FactionA, FactionB);
-    
-    // Try to find existing relationship
-    if (const FFactionRelationshipData* FoundRelationship = FactionRelationships.Find(Key))
-    {
-        return *FoundRelationship;
-    }
-    
-    // Return static default neutral relationship if not found
-    static const FFactionRelationshipData DefaultNeutralRelationship;
-    return DefaultNeutralRelationship;
-}
-
-void ARadiantGameState::DeclareFactionWar(FGameplayTag FactionA, FGameplayTag FactionB)
-{
-    if (!HasAuthority())
-        return;
-
-    // Add to active wars list
-    FString WarTag = FString::Printf(TEXT("%s_vs_%s"), *FactionA.ToString(), *FactionB.ToString());
-    FGameplayTag WarGameplayTag = FGameplayTag::RequestGameplayTag(FName(*WarTag));
-    ActiveWars.AddUnique(WarGameplayTag);
-
-    UE_LOG(LogTemp, Warning, TEXT("War declared between %s and %s"), 
-           *FactionA.ToString(), *FactionB.ToString());
-}
-
-void ARadiantGameState::EndFactionWar(FGameplayTag FactionA, FGameplayTag FactionB)
-{
-    if (!HasAuthority())
-        return;
-
-    // Mark as no longer at war
-    FFactionRelationshipData* Relationship = FactionRelationships.Find(GetFactionRelationshipKey(FactionA, FactionB));
-    if (Relationship)
-    {
-        // Improve relationship slightly (but still hostile)
-        Relationship->ReputationValue = FMath::Max(Relationship->ReputationValue, -50.0f);
-    }
-
-    // Remove from active wars
-    FString WarTag = FString::Printf(TEXT("%s_vs_%s"), *FactionA.ToString(), *FactionB.ToString());
-    FGameplayTag WarGameplayTag = FGameplayTag::RequestGameplayTag(FName(*WarTag));
-    ActiveWars.Remove(WarGameplayTag);
-
-    UE_LOG(LogTemp, Log, TEXT("War ended between %s and %s"), 
-           *FactionA.ToString(), *FactionB.ToString());
-}
-
-TArray<FGameplayTag> ARadiantGameState::GetFactionsAtWar() const
-{
-    return ActiveWars;
-}
-
-void ARadiantGameState::InitializeKnownFactions()
-{
-    // Initialize default factions - this would typically be loaded from data tables
-    KnownFactions.Empty();
-    
-    // Add common faction tags
-    KnownFactions.Add(FGameplayTag::RequestGameplayTag(FName("Faction.Empire")).ToString());
-    KnownFactions.Add(FGameplayTag::RequestGameplayTag(FName("Faction.Rebels")).ToString());
-    KnownFactions.Add(FGameplayTag::RequestGameplayTag(FName("Faction.Merchants")).ToString());
-    KnownFactions.Add(FGameplayTag::RequestGameplayTag(FName("Faction.Bandits")).ToString());
-    KnownFactions.Add(FGameplayTag::RequestGameplayTag(FName("Faction.Wildlife")).ToString());
-
-    UE_LOG(LogTemp, Log, TEXT("Initialized %d known factions"), KnownFactions.Num());
-}
-
-FString ARadiantGameState::GetFactionRelationshipKey(FGameplayTag FactionA, FGameplayTag FactionB) const
-{
-    // Ensure consistent key ordering
-    FString NameA = FactionA.ToString();
-    FString NameB = FactionB.ToString();
-    
-    if (NameA.Compare(NameB) < 0)
-        return FString::Printf(TEXT("%s|%s"), *NameA, *NameB);
-    else
-        return FString::Printf(TEXT("%s|%s"), *NameB, *NameA);
-}
-
-// === WORLD EVENTS IMPLEMENTATION ===
-
-bool ARadiantGameState::StartWorldEvent(const FWorldEventData& EventData)
-{
-    if (!HasAuthority())
-        return false;
-
-    // Validate event data
     if (!ValidateWorldEventData(EventData))
     {
         UE_LOG(LogTemp, Warning, TEXT("Invalid world event data provided"));
-        return false;
+        return;
     }
 
-    // Check if we're at max concurrent events
+    // Check max concurrent events
     if (ActiveWorldEvents.Num() >= MaxConcurrentEvents)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Cannot start world event - at maximum concurrent events (%d)"), 
-               MaxConcurrentEvents);
-        return false;
+        UE_LOG(LogTemp, Warning, TEXT("Maximum concurrent events (%d) reached"), MaxConcurrentEvents);
+        return;
     }
 
-    // Check if event ID already exists
-    for (const FWorldEventData& ExistingEvent : ActiveWorldEvents)
-    {
-        if (ExistingEvent.EventID == EventData.EventID)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("World event ID already exists: %s"), *EventData.EventID);
-            return false;
-        }
-    }
-
-    // Create new event with current timestamp
     FWorldEventData NewEvent = EventData;
-    NewEvent.EventStartTime = GetWorld()->GetTimeSeconds();
-    NewEvent.bIsActive = true;
+    NewEvent.EventID = NextEventID++;
+    NewEvent.StartTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 
-    // Generate ID if not provided
-    if (NewEvent.EventID.IsEmpty())
-    {
-        NewEvent.EventID = GenerateEventID();
-    }
-
-    // Add to active events
     ActiveWorldEvents.Add(NewEvent);
-
-    // Broadcast event started
+    
     OnWorldEventStarted.Broadcast(NewEvent);
     OnWorldEventStartedBP(NewEvent);
 
-    UE_LOG(LogTemp, Log, TEXT("World event started: %s at %s"), 
-           *NewEvent.EventID, *NewEvent.EventLocation.ToString());
-
-    return true;
+    UE_LOG(LogTemp, Log, TEXT("World event added: ID %d"), NewEvent.EventID);
 }
 
-bool ARadiantGameState::EndWorldEvent(const FString& EventID)
+bool ARadiantGameState::RemoveWorldEvent(int32 EventID)
 {
     if (!HasAuthority())
         return false;
 
-    for (int32 i = ActiveWorldEvents.Num() - 1; i >= 0; i--)
+    int32 RemovedCount = ActiveWorldEvents.RemoveAll([EventID](const FWorldEventData& Event)
     {
-        if (ActiveWorldEvents[i].EventID == EventID)
-        {
-            FWorldEventData EndedEvent = ActiveWorldEvents[i];
-            ActiveWorldEvents.RemoveAt(i);
+        return Event.EventID == EventID;
+    });
 
-            // Broadcast event ended
-            OnWorldEventEnded.Broadcast(EndedEvent);
-            OnWorldEventEndedBP(EndedEvent);
-
-            UE_LOG(LogTemp, Log, TEXT("World event ended: %s"), *EventID);
-            return true;
-        }
+    if (RemovedCount > 0)
+    {
+        UE_LOG(LogTemp, Log, TEXT("World event removed: ID %d"), EventID);
+        return true;
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("World event not found for ending: %s"), *EventID);
     return false;
 }
 
-const FWorldEventData& ARadiantGameState::FindWorldEvent(const FString& EventID) const
+bool ARadiantGameState::IsEventActive(int32 EventID) const
 {
-    for (const FWorldEventData& Event : ActiveWorldEvents)
+    return ActiveWorldEvents.ContainsByPredicate([EventID](const FWorldEventData& Event)
     {
-        if (Event.EventID == EventID)
-        {
-            return Event;
-        }
-    }
-    static const FWorldEventData DefaultEmptyEvent;
-    return DefaultEmptyEvent;
+        return Event.EventID == EventID;
+    });
 }
 
-bool ARadiantGameState::IsWorldEventActive(const FString& EventID) const
-{
-    const FWorldEventData& FoundEvent = FindWorldEvent(EventID);
-    return !FoundEvent.EventID.IsEmpty() && FoundEvent.EventID == EventID;
-}
+// === FACTION INTERFACE ===
 
-void ARadiantGameState::UpdateWorldEvents(float DeltaTime)
+void ARadiantGameState::StartWar(FGameplayTag FactionA, FGameplayTag FactionB)
 {
-    float CurrentTime = GetWorld()->GetTimeSeconds();
-    
-    // Update events every 10 seconds
-    if (CurrentTime - LastEventUpdateTime < 10.0f)
+    if (!HasAuthority())
         return;
-        
-    LastEventUpdateTime = CurrentTime;
 
-    // Check for expired events
-    for (int32 i = ActiveWorldEvents.Num() - 1; i >= 0; i--)
+    if (!FactionA.IsValid() || !FactionB.IsValid() || FactionA == FactionB)
     {
-        FWorldEventData& Event = ActiveWorldEvents[i];
-        
-        // Skip indefinite events
-        if (Event.EventDuration < 0.0f)
-            continue;
-            
-        // Check if event has expired
-        float EventAge = CurrentTime - Event.EventStartTime;
-        if (EventAge >= Event.EventDuration)
-        {
-            EndWorldEvent(Event.EventID);
-        }
+        UE_LOG(LogTemp, Warning, TEXT("Invalid faction tags for war"));
+        return;
+    }
+
+    // Generate war tag
+    FString WarString = FString::Printf(TEXT("%s_vs_%s"), *FactionA.ToString(), *FactionB.ToString());
+    FGameplayTag WarTag = FGameplayTag::RequestGameplayTag(*WarString);
+
+    if (!ActiveWars.Contains(WarTag))
+    {
+        ActiveWars.Add(WarTag);
+        OnFactionRelationshipChanged.Broadcast(FactionA, FactionB);
+        OnFactionRelationshipChangedBP(FactionA, FactionB, -100.0f); // War = -100 relationship
+
+        UE_LOG(LogTemp, Log, TEXT("War started: %s vs %s"), *FactionA.ToString(), *FactionB.ToString());
     }
 }
 
-bool ARadiantGameState::ValidateWorldEventData(const FWorldEventData& EventData) const
+void ARadiantGameState::EndWar(FGameplayTag FactionA, FGameplayTag FactionB)
 {
-    // Basic validation
-    if (!EventData.EventType.IsValid())
+    if (!HasAuthority())
+        return;
+
+    // Generate both possible war tags
+    FString WarStringAB = FString::Printf(TEXT("%s_vs_%s"), *FactionA.ToString(), *FactionB.ToString());
+    FString WarStringBA = FString::Printf(TEXT("%s_vs_%s"), *FactionB.ToString(), *FactionA.ToString());
+    
+    FGameplayTag WarTagAB = FGameplayTag::RequestGameplayTag(*WarStringAB);
+    FGameplayTag WarTagBA = FGameplayTag::RequestGameplayTag(*WarStringBA);
+
+    bool bWarEnded = false;
+    bWarEnded |= ActiveWars.Remove(WarTagAB) > 0;
+    bWarEnded |= ActiveWars.Remove(WarTagBA) > 0;
+
+    if (bWarEnded)
     {
-        UE_LOG(LogTemp, Warning, TEXT("World event has invalid event type"));
+        OnFactionRelationshipChanged.Broadcast(FactionA, FactionB);
+        OnFactionRelationshipChangedBP(FactionA, FactionB, 0.0f); // Peace = neutral relationship
+
+        UE_LOG(LogTemp, Log, TEXT("War ended: %s vs %s"), *FactionA.ToString(), *FactionB.ToString());
+    }
+}
+
+bool ARadiantGameState::AreFactionsAtWar(FGameplayTag FactionA, FGameplayTag FactionB) const
+{
+    if (!FactionA.IsValid() || !FactionB.IsValid() || FactionA == FactionB)
+    {
         return false;
     }
+
+    // Generate both possible war tags
+    FString WarStringAB = FString::Printf(TEXT("%s_vs_%s"), *FactionA.ToString(), *FactionB.ToString());
+    FString WarStringBA = FString::Printf(TEXT("%s_vs_%s"), *FactionB.ToString(), *FactionA.ToString());
     
-    if (EventData.EventRadius <= 0.0f)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("World event has invalid radius: %.2f"), EventData.EventRadius);
-        return false;
-    }
-    
-    return true;
+    FGameplayTag WarTagAB = FGameplayTag::RequestGameplayTag(*WarStringAB);
+    FGameplayTag WarTagBA = FGameplayTag::RequestGameplayTag(*WarStringBA);
+
+    return ActiveWars.Contains(WarTagAB) || ActiveWars.Contains(WarTagBA);
 }
 
-FString ARadiantGameState::GenerateEventID()
-{
-    return FString::Printf(TEXT("Event_%d"), NextEventID++);
-}
-
-// === GLOBAL FLAGS IMPLEMENTATION ===
+// === GLOBAL STATE INTERFACE ===
 
 void ARadiantGameState::SetGlobalFlag(FGameplayTag Flag, bool bValue)
 {
     if (!HasAuthority())
         return;
 
-    bool bPreviousValue = GlobalFlags.HasTag(Flag);
-    
-    if (bValue)
+    if (!Flag.IsValid())
     {
-        GlobalFlags.AddTag(Flag);
-    }
-    else
-    {
-        GlobalFlags.RemoveTag(Flag);
+        UE_LOG(LogTemp, Warning, TEXT("Invalid flag provided"));
+        return;
     }
 
-    // Only broadcast if value actually changed
-    if (bPreviousValue != bValue)
+    bool bPreviousValue = GlobalFlags.HasTag(Flag);
+
+    if (bValue && !bPreviousValue)
     {
+        GlobalFlags.AddTag(Flag);
         OnGlobalFlagChanged.Broadcast(Flag);
         OnGlobalFlagChangedBP(Flag, bValue);
         
-        UE_LOG(LogTemp, Log, TEXT("Global flag %s set to %s"), 
-               *Flag.ToString(), bValue ? TEXT("true") : TEXT("false"));
+        UE_LOG(LogTemp, Log, TEXT("Global flag set: %s"), *Flag.ToString());
+    }
+    else if (!bValue && bPreviousValue)
+    {
+        GlobalFlags.RemoveTag(Flag);
+        OnGlobalFlagChanged.Broadcast(Flag);
+        OnGlobalFlagChangedBP(Flag, bValue);
+        
+        UE_LOG(LogTemp, Log, TEXT("Global flag removed: %s"), *Flag.ToString());
     }
 }
 
-bool ARadiantGameState::GetGlobalFlag(FGameplayTag Flag) const
+void ARadiantGameState::SetGlobalVariable(const FString& VariableName, float Value)
 {
-    return GlobalFlags.HasTag(Flag);
-}
+    if (!HasAuthority())
+    {
+        ServerSetGlobalVariable(VariableName, Value);
+        return;
+    }
 
-void ARadiantGameState::ToggleGlobalFlag(FGameplayTag Flag)
-{
-    SetGlobalFlag(Flag, !GetGlobalFlag(Flag));
-}
-
-// === GLOBAL VARIABLES IMPLEMENTATION ===
-
-void ARadiantGameState::ServerSetGlobalVariable_Implementation(const FString& VariableName, float Value)
-{
-    GlobalVariables.Add(VariableName, Value);
-    UE_LOG(LogTemp, VeryVerbose, TEXT("Global variable %s set to %.2f"), *VariableName, Value);
+    GlobalVariables.SetVariable(VariableName, Value);
+    UE_LOG(LogTemp, Verbose, TEXT("Global variable %s set to %f"), *VariableName, Value);
 }
 
 float ARadiantGameState::GetGlobalVariable(const FString& VariableName, float DefaultValue) const
 {
-    const float* Value = GlobalVariables.Find(VariableName);
-    return Value ? *Value : DefaultValue;
+    return GlobalVariables.GetVariable(VariableName, DefaultValue);
 }
 
-void ARadiantGameState::ServerSetGlobalString_Implementation(const FString& VariableName, const FString& Value)
+void ARadiantGameState::SetGlobalString(const FString& VariableName, const FString& Value)
 {
-    GlobalStrings.Add(VariableName, Value);
-    UE_LOG(LogTemp, VeryVerbose, TEXT("Global string %s set to %s"), *VariableName, *Value);
+    if (!HasAuthority())
+    {
+        ServerSetGlobalString(VariableName, Value);
+        return;
+    }
+
+    GlobalStrings.SetVariable(VariableName, Value);
+    UE_LOG(LogTemp, Verbose, TEXT("Global string %s set to %s"), *VariableName, *Value);
 }
 
 FString ARadiantGameState::GetGlobalString(const FString& VariableName, const FString& DefaultValue) const
 {
-    const FString* Value = GlobalStrings.Find(VariableName);
-    return Value ? *Value : DefaultValue;
+    return GlobalStrings.GetVariable(VariableName);
 }
 
-// === UTILITY FUNCTIONS ===
+// === INTERNAL FUNCTIONS ===
 
-FString ARadiantGameState::GetFormattedTimeString() const
+void ARadiantGameState::InitializeWorldState()
 {
-    int32 Hours = FMath::FloorToInt(WorldTime.GetHours());
-    int32 Minutes = FMath::FloorToInt(WorldTime.GetMinutes());
+    UE_LOG(LogTemp, Log, TEXT("RadiantGameState: Initializing world state (Authority)"));
+
+    // Sync time from WorldManager if available
+    if (WorldManager)
+    {
+        SyncTimeFromWorldManager();
+    }
+    else
+    {
+        // Fallback: use default time
+        WorldTime = FSimpleWorldTime();
+        UE_LOG(LogTemp, Warning, TEXT("WorldManager not available during GameState init"));
+    }
+
+    // Initialize collections
+    ActiveWorldEvents.Empty();
+    GlobalFlags = FGameplayTagContainer();
+    GlobalVariables.Empty();
+    GlobalStrings.Empty();
+    ActiveWars.Empty();
+
+    UE_LOG(LogTemp, Log, TEXT("World state initialized - Time: %s"), *WorldTime.GetFullTimeString());
+}
+
+void ARadiantGameState::UpdateWorldState(float DeltaTime)
+{
+    // Sync time from WorldManager periodically
+    static float TimeSyncAccumulator = 0.0f;
+    TimeSyncAccumulator += DeltaTime;
     
-    return FString::Printf(TEXT("%02d:%02d"), Hours, Minutes);
+    if (TimeSyncAccumulator >= 1.0f) // Sync every second
+    {
+        if (WorldManager)
+        {
+            SyncTimeFromWorldManager();
+        }
+        TimeSyncAccumulator = 0.0f;
+    }
+
+    // Update world events
+    UpdateWorldEvents(DeltaTime);
 }
 
-FString ARadiantGameState::GetFormattedDateString() const
+void ARadiantGameState::UpdateWorldEvents(float DeltaTime)
 {
-    return FString::Printf(TEXT("Day %d"), WorldTime.GameDay);
+    if (!HasAuthority())
+        return;
+
+    float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+
+    // Remove expired events
+    TArray<FWorldEventData> ExpiredEvents;
+    ActiveWorldEvents.RemoveAll([CurrentTime, &ExpiredEvents](const FWorldEventData& Event)
+    {
+        bool bExpired = Event.Duration > 0.0f && (CurrentTime - Event.StartTime) >= Event.Duration;
+        if (bExpired)
+        {
+            ExpiredEvents.Add(Event);
+        }
+        return bExpired;
+    });
+
+    // Broadcast expired events
+    for (const FWorldEventData& ExpiredEvent : ExpiredEvents)
+    {
+        OnWorldEventEnded.Broadcast(ExpiredEvent);
+        OnWorldEventEndedBP(ExpiredEvent);
+        UE_LOG(LogTemp, Log, TEXT("World event expired: ID %d"), ExpiredEvent.EventID);
+    }
+}
+
+bool ARadiantGameState::ValidateWorldEventData(const FWorldEventData& EventData) const
+{
+    // Basic validation
+    if (EventData.EventType == FGameplayTag())
+    {
+        return false;
+    }
+
+    if (EventData.Duration < 0.0f)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+float ARadiantGameState::GetFactionRelationship(FGameplayTag FactionA, FGameplayTag FactionB) const
+{
+    if (!FactionA.IsValid() || !FactionB.IsValid())
+    {
+        return 0.0f; // Neutral for invalid factions
+    }
+
+    // Same faction relationship
+    if (FactionA == FactionB)
+    {
+        return 1.0f; // Same faction is always allied
+    }
+
+    // Check if factions are at war
+    if (AreFactionsAtWar(FactionA, FactionB))
+    {
+        return -1.0f; // War means hostile
+    }
+
+    // Check for hierarchical faction relationships (parent/child tags)
+    if (FactionA.MatchesTag(FactionB) || FactionB.MatchesTag(FactionA))
+    {
+        return 1.0f; // Related factions are allied
+    }
+
+    // Check for specific faction alliances using includes from RadiantGameplayTags.h
+    
+    // Kingdom subfactions are allied
+    if (FactionA.ToString().Contains(TEXT("Faction.Kingdom")) && FactionB.ToString().Contains(TEXT("Faction.Kingdom")))
+    {
+        return 0.75f; // Strong alliance
+    }
+
+    // Merchant subfactions are allied
+    if (FactionA.ToString().Contains(TEXT("Faction.Merchants")) && FactionB.ToString().Contains(TEXT("Faction.Merchants")))
+    {
+        return 0.75f; // Strong alliance
+    }
+
+    // Bandit subfactions are allied
+    if (FactionA.ToString().Contains(TEXT("Faction.Bandits")) && FactionB.ToString().Contains(TEXT("Faction.Bandits")))
+    {
+        return 0.75f; // Strong alliance
+    }
+
+    // Villager subfactions are allied
+    if (FactionA.ToString().Contains(TEXT("Faction.Villagers")) && FactionB.ToString().Contains(TEXT("Faction.Villagers")))
+    {
+        return 0.75f; // Strong alliance
+    }
+
+    // Bandits are hostile to most other factions
+    if (FactionA.ToString().Contains(TEXT("Faction.Bandits")) && !FactionB.ToString().Contains(TEXT("Faction.Bandits")))
+    {
+        if (!FactionB.ToString().Contains(TEXT("Faction.Neutral")) && !FactionB.ToString().Contains(TEXT("Faction.Wildlife")))
+        {
+            return -0.5f; // Generally hostile
+        }
+    }
+
+    if (FactionB.ToString().Contains(TEXT("Faction.Bandits")) && !FactionA.ToString().Contains(TEXT("Faction.Bandits")))
+    {
+        if (!FactionA.ToString().Contains(TEXT("Faction.Neutral")) && !FactionA.ToString().Contains(TEXT("Faction.Wildlife")))
+        {
+            return -0.5f; // Generally hostile
+        }
+    }
+
+    // Wildlife and neutral factions are neutral to most
+    if (FactionA.ToString().Contains(TEXT("Faction.Wildlife")) || FactionB.ToString().Contains(TEXT("Faction.Wildlife")) ||
+        FactionA.ToString().Contains(TEXT("Faction.Neutral")) || FactionB.ToString().Contains(TEXT("Faction.Neutral")))
+    {
+        return 0.0f; // Neutral
+    }
+
+    // Default neutral relationship
+    return 0.0f;
+}
+
+FString ARadiantGameState::GetFactionRelationshipKey(FGameplayTag FactionA, FGameplayTag FactionB) const
+{
+    // Ensure consistent ordering for relationship keys
+    if (FactionA.ToString() < FactionB.ToString())
+    {
+        return FString::Printf(TEXT("%s_%s"), *FactionA.ToString(), *FactionB.ToString());
+    }
+    else
+    {
+        return FString::Printf(TEXT("%s_%s"), *FactionB.ToString(), *FactionA.ToString());
+    }
 }
 
 // === REPLICATION CALLBACKS ===
@@ -659,6 +578,8 @@ void ARadiantGameState::OnRep_WorldTime()
 {
     OnWorldTimeChanged.Broadcast(WorldTime);
     OnWorldTimeChangedBP(WorldTime);
+    
+    UE_LOG(LogTemp, Verbose, TEXT("World time replicated: %s"), *WorldTime.GetFullTimeString());
 }
 
 void ARadiantGameState::OnRep_ActiveWorldEvents()
@@ -676,26 +597,14 @@ void ARadiantGameState::OnRep_ActiveWars()
     UE_LOG(LogTemp, Verbose, TEXT("Active wars replicated: %d wars"), ActiveWars.Num());
 }
 
-bool ARadiantGameState::AreFactionsAtWar(FGameplayTag FactionA, FGameplayTag FactionB) const
+// === SERVER RPC IMPLEMENTATIONS ===
+
+void ARadiantGameState::ServerSetGlobalVariable_Implementation(const FString& VariableName, float Value)
 {
-    if (!FactionA.IsValid() || !FactionB.IsValid())
-    {
-        return false;
-    }
+    SetGlobalVariable(VariableName, Value);
+}
 
-    // Same faction cannot be at war with itself
-    if (FactionA == FactionB)
-    {
-        return false;
-    }
-
-    // Generate war tags to check against ActiveWars
-    FString WarTagAB = FString::Printf(TEXT("%s_vs_%s"), *FactionA.ToString(), *FactionB.ToString());
-    FString WarTagBA = FString::Printf(TEXT("%s_vs_%s"), *FactionB.ToString(), *FactionA.ToString());
-    
-    FGameplayTag WarGameplayTagAB = FGameplayTag::RequestGameplayTag(FName(*WarTagAB));
-    FGameplayTag WarGameplayTagBA = FGameplayTag::RequestGameplayTag(FName(*WarTagBA));
-
-    // Check if either war tag exists in ActiveWars
-    return ActiveWars.Contains(WarGameplayTagAB) || ActiveWars.Contains(WarGameplayTagBA);
+void ARadiantGameState::ServerSetGlobalString_Implementation(const FString& VariableName, const FString& Value)
+{
+    SetGlobalString(VariableName, Value);
 }

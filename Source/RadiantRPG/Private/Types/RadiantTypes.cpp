@@ -13,7 +13,7 @@ float URadiantTypeUtils::TimeOfDayToHour(ETimeOfDay TimeOfDay)
         case ETimeOfDay::Dawn:      return 6.0f;
         case ETimeOfDay::Morning:   return 9.0f;
         case ETimeOfDay::Noon:      return 12.0f;
-        case ETimeOfDay::Midday: return 15.0f;
+        case ETimeOfDay::Afternoon: return 15.0f;
         case ETimeOfDay::Dusk:      return 18.0f;
         case ETimeOfDay::Evening:   return 20.0f;
         case ETimeOfDay::Night:     return 22.0f;
@@ -37,7 +37,7 @@ ETimeOfDay URadiantTypeUtils::HourToTimeOfDay(float Hour)
     else if (Hour >= 11.0f && Hour < 14.0f)
         return ETimeOfDay::Noon;
     else if (Hour >= 14.0f && Hour < 17.0f)
-        return ETimeOfDay::Midday;
+        return ETimeOfDay::Afternoon;
     else if (Hour >= 17.0f && Hour < 19.0f)
         return ETimeOfDay::Dusk;
     else if (Hour >= 19.0f && Hour < 21.0f)

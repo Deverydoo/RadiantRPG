@@ -5,8 +5,9 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "CoreTypes.h"
+#include "FactionTypes.h"
+#include "TimeTypes.h"
 #include "WorldTypes.generated.h"
-
 
 
 /**
@@ -344,6 +345,7 @@ struct RADIANTRPG_API FWorldWeatherData
 	float Temperature;
 	float WeatherIntensity;
 	float TimeToWeatherChange;
+	float TransitionDuration;
 
 	FWorldWeatherData()
 	{
@@ -393,7 +395,7 @@ struct FSpawnRule
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FValueRange SpawnRadius = FValueRange(100.0f, 500.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	ETimeOfDay ActiveTime = ETimeOfDay::Morning;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -489,36 +491,141 @@ struct FZoneData
  * World state snapshot
  */
 USTRUCT(BlueprintType)
-struct FWorldState
+struct RADIANTRPG_API FWorldState
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	float WorldTime = 0.0f;
+    // === SIMPLIFIED TIME DATA ===
+    
+    /** Current world time data */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
+    FSimpleWorldTime CurrentTime;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	float DayNumber = 1.0f;
+    /** Whether time progression is enabled */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Time")
+    bool bTimeProgressionEnabled = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	ETimeOfDay CurrentTimeOfDay = ETimeOfDay::Morning;
+    // === WEATHER DATA ===
+    
+    /** Current global weather state */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather")
+    FWorldWeatherData GlobalWeather;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	EWeatherType CurrentWeather = EWeatherType::Clear;
+    // === ZONE DATA ===
+    
+    /** All zone data indexed by zone tag */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zones")
+    TMap<FString, FZoneData> Zones;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TMap<FName, FZoneData> Zones;
+    /** Zone population counts */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zones")
+    TMap<FString, int32> ZonePopulations;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TMap<FName, int32> ZonePopulations;
+    /** Zone weather overrides (zones with custom weather) */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zones")
+    TMap<FString, FWorldWeatherData> ZoneWeatherOverrides;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FGameplayTagContainer ActiveWorldEvents;
+    // === WORLD EVENTS ===
+    
+    /** Currently active world events */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
+    FGameplayTagContainer ActiveWorldEvents;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TArray<FName> CompletedEvents;
+    /** Events that have been completed */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
+    TArray<FString> CompletedEvents;
 
-	FWorldState()
-	{
-	}
+    /** Event metadata for active events */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Events")
+    TMap<FString, FString> EventMetadata;
+
+    // === FACTION DATA ===
+    
+    /** Faction relationships and standings */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Factions")
+    TMap<FString, FFactionRelationship> FactionRelationships;
+
+    /** Current wars between factions */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Factions")
+    TArray<FString> ActiveWars;
+
+    /** Territory control by faction */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Factions")
+    TMap<FString, FString> TerritoryControl; // ZoneID -> FactionID
+
+    // === SIMULATION STATE ===
+    
+    /** Simulation version for compatibility checking */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "System")
+    int32 SimulationVersion = 1;
+
+    /** Timestamp when this state was created */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "System")
+    FDateTime StateTimestamp;
+
+    /** Total simulation time elapsed */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "System")
+    float TotalSimulationTime = 0.0f;
+
+    /** Simulation flags for various systems */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "System")
+    FGameplayTagContainer SimulationFlags;
+
+    FWorldState()
+    {
+        CurrentTime = FSimpleWorldTime();
+        GlobalWeather = FWorldWeatherData();
+        SimulationVersion = 1;
+        StateTimestamp = FDateTime::Now();
+        TotalSimulationTime = 0.0f;
+        bTimeProgressionEnabled = true;
+    }
+
+    /** Get formatted timestamp string */
+    FString GetTimestampString() const
+    {
+        return StateTimestamp.ToString(TEXT("%Y-%m-%d %H:%M:%S"));
+    }
+
+    /** Check if this state is compatible with current simulation version */
+    bool IsCompatibleVersion(int32 CurrentVersion) const
+    {
+        return SimulationVersion == CurrentVersion;
+    }
+
+    /** Get total number of active events */
+    int32 GetActiveEventCount() const
+    {
+        return ActiveWorldEvents.Num();
+    }
+
+    /** Check if a specific event is active */
+    bool IsEventActive(const FString& EventName) const
+    {
+        FGameplayTag EventTag = FGameplayTag::RequestGameplayTag(*EventName);
+        return ActiveWorldEvents.HasTag(EventTag);
+    }
+
+    /** Check if an event has been completed */
+    bool IsEventCompleted(const FString& EventName) const
+    {
+        return CompletedEvents.Contains(EventName);
+    }
+
+    /** Get zone count */
+    int32 GetZoneCount() const
+    {
+        return Zones.Num();
+    }
+
+    /** Get total population across all zones */
+    int32 GetTotalPopulation() const
+    {
+        int32 Total = 0;
+        for (const auto& PopPair : ZonePopulations)
+        {
+            Total += PopPair.Value;
+        }
+        return Total;
+    }
 };
-

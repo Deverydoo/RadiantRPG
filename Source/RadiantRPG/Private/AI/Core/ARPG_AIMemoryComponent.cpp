@@ -11,7 +11,7 @@
 #include "AI/Interfaces/ARPG_FactionInterface.h"
 #include "Core/RadiantGameManager.h"
 #include "Types/ARPG_AIDataTableTypes.h"
-#include "World/RadiantZone.h"
+#include "World/RadiantZoneManager.h"
 
 UARPG_AIMemoryComponent::UARPG_AIMemoryComponent()
 {
@@ -685,7 +685,7 @@ void UARPG_AIMemoryComponent::FormLocationMemory(FVector Location, FGameplayTag 
     // Add zone information if available
     if (UWorld* World = GetWorld())
     {
-        if (ARadiantZone* Zone = FindZoneAtLocation(Location))
+        if (ARadiantZoneManager* Zone = FindZoneAtLocation(Location))
         {
             FGameplayTag ZoneTag = Zone->GetZoneTag();
             if (ZoneTag.IsValid())
@@ -717,14 +717,14 @@ void UARPG_AIMemoryComponent::FormLocationMemory(FVector Location, FGameplayTag 
     }
 }
 
-ARadiantZone* UARPG_AIMemoryComponent::FindZoneAtLocation(FVector Location) const
+ARadiantZoneManager* UARPG_AIMemoryComponent::FindZoneAtLocation(FVector Location) const
 {
     if (UWorld* World = GetWorld())
     {
         // Find all RadiantZone actors in the world
-        for (TActorIterator<ARadiantZone> ActorIterator(World); ActorIterator; ++ActorIterator)
+        for (TActorIterator<ARadiantZoneManager> ActorIterator(World); ActorIterator; ++ActorIterator)
         {
-            ARadiantZone* Zone = *ActorIterator;
+            ARadiantZoneManager* Zone = *ActorIterator;
             if (Zone && Zone->IsLocationInZone(Location))
             {
                 return Zone;
