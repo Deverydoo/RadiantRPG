@@ -13,6 +13,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "GameplayTagsManager.h"
+#include "Types/SystemTypes.h"
 
 ARadiantGameMode::ARadiantGameMode()
 {
@@ -68,14 +69,7 @@ void ARadiantGameMode::BeginPlay()
 {
     Super::BeginPlay();
     
-    LogGameModeStatus(TEXT("RadiantGameMode starting initialization"));
-    
-    // Cache important references
-    GameManager = GetGameInstance()->GetSubsystem<URadiantGameManager>();
-    if (!GameManager)
-    {
-        LogGameModeStatus(TEXT("Failed to get RadiantGameManager - game systems may not function properly"), true);
-    }
+    LogGameModeStatus(TEXT("RadiantGameMode starting event-driven initialization"));
     
     // Validate configuration
     if (!ValidateGameModeConfiguration())
@@ -83,8 +77,171 @@ void ARadiantGameMode::BeginPlay()
         LogGameModeStatus(TEXT("Game mode configuration validation failed"), true);
     }
     
-    // Start world initialization sequence
-    StartWorldInitialization();
+    // Subscribe to system initialization events
+    SubscribeToSystemEvents();
+    
+    // Start initialization process
+    StartEventDrivenInitialization();
+}
+
+void ARadiantGameMode::SubscribeToSystemEvents()
+{
+    // Subscribe to system initialization events
+    FSystemEventCoordinator::Get().OnSystemInitialized.AddUObject(this, &ARadiantGameMode::OnSystemInitialized);
+    FSystemEventCoordinator::Get().OnSystemShutdown.AddUObject(this, &ARadiantGameMode::OnSystemShutdown);
+    
+    LogGameModeStatus(TEXT("Subscribed to system events"));
+}
+
+void ARadiantGameMode::StartEventDrivenInitialization()
+{
+    WorldInitializationStartTime = FPlatformTime::Seconds();
+    SetWorldInitializationPhase(EWorldInitializationPhase::SystemsStartup);
+    
+    // Set timeout timer as backup
+    GetWorldTimerManager().SetTimer(InitializationTimeoutHandle, 
+                                   this, &ARadiantGameMode::OnWorldInitializationTimeout,
+                                   WorldInitializationTimeout, false);
+    
+    LogGameModeStatus(TEXT("Event-driven initialization started - waiting for systems"));
+}
+
+void ARadiantGameMode::OnSystemInitialized(const FSystemInitializationEvent& Event)
+{
+    LogGameModeStatus(FString::Printf(TEXT("System initialized: %s (%s)"), 
+                      *Event.SystemName,
+                      Event.bInitializationSuccessful ? TEXT("Success") : TEXT("Failed")));
+    
+    // React to specific system initializations
+    switch (Event.SystemType)
+    {
+        case ESystemType::GameManager:
+            OnGameManagerInitialized(Event.bInitializationSuccessful);
+            break;
+            
+        case ESystemType::WorldManager:
+            OnWorldManagerInitialized(Event.bInitializationSuccessful);
+            break;
+            
+        case ESystemType::AIManager:
+            OnAIManagerInitialized(Event.bInitializationSuccessful);
+            break;
+            
+        default:
+            break;
+    }
+    
+    // Check if we can advance to next phase
+    CheckInitializationProgress();
+}
+
+void ARadiantGameMode::OnGameManagerInitialized(bool bSuccess)
+{
+    if (bSuccess)
+    {
+        // Get reference now that it's initialized
+        GameManager = GetGameInstance()->GetSubsystem<URadiantGameManager>();
+        LogGameModeStatus(TEXT("GameManager reference cached"));
+        
+        // Can advance from SystemsStartup to WorldGeneration
+        if (CurrentInitPhase == EWorldInitializationPhase::SystemsStartup)
+        {
+            SetWorldInitializationPhase(EWorldInitializationPhase::WorldGeneration);
+        }
+    }
+    else
+    {
+        LogGameModeStatus(TEXT("GameManager initialization failed - proceeding without it"), true);
+    }
+}
+
+void ARadiantGameMode::OnWorldManagerInitialized(bool bSuccess)
+{
+    if (bSuccess)
+    {
+        LogGameModeStatus(TEXT("WorldManager initialized - world simulation ready"));
+        
+        // Can advance from WorldGeneration to AIInitialization
+        if (CurrentInitPhase == EWorldInitializationPhase::WorldGeneration)
+        {
+            SetWorldInitializationPhase(EWorldInitializationPhase::AIInitialization);
+        }
+    }
+    else
+    {
+        LogGameModeStatus(TEXT("WorldManager initialization failed"), true);
+    }
+}
+
+void ARadiantGameMode::OnAIManagerInitialized(bool bSuccess)
+{
+    if (bSuccess)
+    {
+        LogGameModeStatus(TEXT("AIManager initialized - AI systems ready"));
+        
+        // Can advance from AIInitialization to PlayerSpawn
+        if (CurrentInitPhase == EWorldInitializationPhase::AIInitialization)
+        {
+            SetWorldInitializationPhase(EWorldInitializationPhase::PlayerSpawn);
+        }
+    }
+    else
+    {
+        LogGameModeStatus(TEXT("AIManager initialization failed - AI systems disabled"), true);
+        bEnableAISystems = false;
+    }
+}
+
+void ARadiantGameMode::CheckInitializationProgress()
+{
+    FSystemEventCoordinator& Coordinator = FSystemEventCoordinator::Get();
+    
+    // Define minimum required systems for each phase
+    switch (CurrentInitPhase)
+    {
+        case EWorldInitializationPhase::SystemsStartup:
+            // Wait for GameManager
+            if (Coordinator.IsSystemInitialized(ESystemType::GameManager))
+            {
+                SetWorldInitializationPhase(EWorldInitializationPhase::WorldGeneration);
+            }
+            break;
+            
+        case EWorldInitializationPhase::WorldGeneration:
+            // Wait for WorldManager
+            if (Coordinator.IsSystemInitialized(ESystemType::WorldManager))
+            {
+                SetWorldInitializationPhase(EWorldInitializationPhase::AIInitialization);
+            }
+            break;
+            
+        case EWorldInitializationPhase::AIInitialization:
+            // AI is optional - proceed after timeout or when AI initializes
+            if (Coordinator.IsSystemInitialized(ESystemType::AIManager) || !bEnableAISystems)
+            {
+                SetWorldInitializationPhase(EWorldInitializationPhase::PlayerSpawn);
+            }
+            break;
+            
+        case EWorldInitializationPhase::PlayerSpawn:
+            // Ready for players - complete initialization
+            SetWorldInitializationPhase(EWorldInitializationPhase::Complete);
+            break;
+            
+        default:
+            break;
+    }
+}
+
+void ARadiantGameMode::OnSystemShutdown(const FSystemInitializationEvent& Event)
+{
+    LogGameModeStatus(FString::Printf(TEXT("System shutdown: %s"), *Event.SystemName));
+    
+    // Handle system shutdowns if needed
+    if (Event.SystemType == ESystemType::GameManager)
+    {
+        GameManager = nullptr;
+    }
 }
 
 void ARadiantGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)

@@ -7,6 +7,7 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "GameplayTagContainer.h"
 #include "Types/RadiantTypes.h"
+#include "Types/SystemTypes.h"
 #include "World/ISimpleTimeManager.h"
 #include "RadiantGameManager.generated.h"
 
@@ -63,6 +64,7 @@ public:
 
     // USubsystem interface
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+    void OnAIManagerReady();
     virtual void Deinitialize() override;
 
     // UTickableWorldSubsystem interface
@@ -267,6 +269,8 @@ public:
     /** Get detailed system status report */
     UFUNCTION(BlueprintPure, Category = "System Health")
     TMap<FString, FString> GetSystemStatusReport() const;
+    void OnOtherSystemInitialized(const FSystemInitializationEvent& Event);
+    void OnWorldManagerReady();
 
 protected:
     // === BLUEPRINT EVENTS ===
@@ -286,7 +290,7 @@ protected:
     // === INTERNAL FUNCTIONS ===
     
     /** Initialize game systems in proper order */
-    void InitializeGameSystems();
+    bool InitializeGameSystems();
 
     /** Shutdown game systems */
     void ShutdownGameSystems();

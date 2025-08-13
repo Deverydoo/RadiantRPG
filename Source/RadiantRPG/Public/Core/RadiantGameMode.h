@@ -7,6 +7,7 @@
 #include "GameFramework/GameModeBase.h"
 #include "GameplayTagContainer.h"
 #include "Engine/DataTable.h"
+#include "Types/SystemTypes.h"
 #include "RadiantGameMode.generated.h"
 
 // Forward declarations
@@ -69,6 +70,14 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    void SubscribeToSystemEvents();
+    void StartEventDrivenInitialization();
+    void OnSystemInitialized(const FSystemInitializationEvent& Event);
+    void OnGameManagerInitialized(bool bSuccess);
+    void OnWorldManagerInitialized(bool bSuccess);
+    void OnAIManagerInitialized(bool bSuccess);
+    void CheckInitializationProgress();
+    void OnSystemShutdown(const FSystemInitializationEvent& Event);
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void Tick(float DeltaTime) override;
 

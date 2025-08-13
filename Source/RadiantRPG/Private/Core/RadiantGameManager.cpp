@@ -14,6 +14,7 @@
 #include "Misc/DateTime.h"
 #include "GenericPlatform/GenericPlatformMemory.h"
 #include "Stats/StatsHierarchical.h"
+#include "Types/SystemTypes.h"
 #include "World/RadiantWorldManager.h"
 
 URadiantGameManager::URadiantGameManager()
@@ -48,19 +49,32 @@ void URadiantGameManager::Initialize(FSubsystemCollectionBase& Collection)
     // Set initial game state
     SetGameState(EGameState::Initializing);
     
-    // Initialize systems in proper order
-    InitializeGameSystems();
+    // Initialize our systems first
+    bool bInitSuccess = InitializeGameSystems();
     
     // Set up auto-save timer
     SetupAutoSaveTimer();
     
     // Mark as initialized
-    bIsInitialized = true;
+    bIsInitialized = bInitSuccess;
     
-    // Transition to menu state
-    SetGameState(EGameState::MainMenu);
+    // Broadcast initialization event
+    FSystemEventCoordinator::Get().BroadcastSystemInitialized(
+        ESystemType::GameManager, 
+        bInitSuccess, 
+        TEXT("RadiantGameManager")
+    );
     
-    UE_LOG(LogTemp, Log, TEXT("RadiantGameManager initialization complete"));
+    if (bInitSuccess)
+    {
+        // Transition to menu state
+        SetGameState(EGameState::MainMenu);
+        UE_LOG(LogTemp, Log, TEXT("RadiantGameManager initialization complete"));
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("RadiantGameManager initialization failed"));
+    }
 }
 
 void URadiantGameManager::Deinitialize()
@@ -68,6 +82,12 @@ void URadiantGameManager::Deinitialize()
     UE_LOG(LogTemp, Log, TEXT("RadiantGameManager shutting down..."));
     
     bIsShuttingDown = true;
+    
+    // Broadcast shutdown event
+    FSystemEventCoordinator::Get().BroadcastSystemShutdown(
+        ESystemType::GameManager, 
+        TEXT("RadiantGameManager")
+    );
     
     // Clear auto-save timer
     if (UWorld* World = GetWorld())
@@ -534,10 +554,59 @@ TMap<FString, FString> URadiantGameManager::GetSystemStatusReport() const
 }
 
 // === INTERNAL FUNCTIONS ===
+void URadiantGameManager::OnOtherSystemInitialized(const FSystemInitializationEvent& Event)
+{
+    UE_LOG(LogTemp, Log, TEXT("GameManager: Received system initialization event for %s"), *Event.SystemName);
+    
+    // React to other systems coming online
+    switch (Event.SystemType)
+    {
+    case ESystemType::WorldManager:
+        if (Event.bInitializationSuccessful)
+        {
+            OnWorldManagerReady();
+        }
+        break;
+            
+    case ESystemType::AIManager:
+        if (Event.bInitializationSuccessful)
+        {
+            OnAIManagerReady();
+        }
+        break;
+            
+    default:
+        break;
+    }
+}
 
-void URadiantGameManager::InitializeGameSystems()
+void URadiantGameManager::OnWorldManagerReady()
+{
+    UE_LOG(LogTemp, Log, TEXT("GameManager: WorldManager is ready - can start world simulation"));
+    
+    // Now we can safely interact with WorldManager
+    if (WorldManager)
+    {
+        // Request world simulation start if needed
+        if (!WorldManager->IsWorldSimulationActive())
+        {
+            WorldManager->InitializeWorldSimulation();
+        }
+    }
+}
+
+void URadiantGameManager::OnAIManagerReady()
+{
+    UE_LOG(LogTemp, Log, TEXT("GameManager: AIManager is ready - can coordinate with AI systems"));
+    
+    // Set up AI coordination when AI systems are ready
+}
+
+bool URadiantGameManager::InitializeGameSystems()
 {
     UE_LOG(LogTemp, Log, TEXT("GameManager: Initializing game systems..."));
+    
+    bool bAllSystemsInitialized = true;
     
     // Get subsystem references
     if (UGameInstance* GameInstance = GetGameInstance())
@@ -548,16 +617,22 @@ void URadiantGameManager::InitializeGameSystems()
     // Initialize systems in dependency order
     if (WorldManager)
     {
-        WorldManager->InitializeWorldSimulation();
-        UE_LOG(LogTemp, Log, TEXT("GameManager: WorldManager initialized"));
+        // Don't call InitializeWorldSimulation directly - let WorldManager handle its own initialization
+        UE_LOG(LogTemp, Log, TEXT("GameManager: WorldManager reference acquired"));
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("GameManager: Failed to get WorldManager subsystem"));
+        UE_LOG(LogTemp, Warning, TEXT("GameManager: WorldManager subsystem not available"));
+        bAllSystemsInitialized = false;
     }
     
+    // Subscribe to other system events to coordinate
+    FSystemEventCoordinator::Get().OnSystemInitialized.AddUObject(this, &URadiantGameManager::OnOtherSystemInitialized);
+    
     UE_LOG(LogTemp, Log, TEXT("GameManager: Game systems initialization complete"));
+    return bAllSystemsInitialized;
 }
+
 
 void URadiantGameManager::ShutdownGameSystems()
 {
