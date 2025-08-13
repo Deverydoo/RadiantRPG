@@ -3,14 +3,16 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AITypes.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTags.h"
 #include "Types/ARPG_AITypes.h"
 #include "AI/Interfaces/IARPG_AIBehaviorExecutorInterface.h"
 #include "AIController.h"
-#include "Navigation/PathFollowingComponent.h"
+
 #include "ARPG_AIMovementExecutorComponent.generated.h"
 
+class AAIController;
 /**
  * Movement execution configuration
  */
@@ -224,8 +226,7 @@ protected:
     float CalculateMovementProgress() const;
 
     /** Handle path following completion */
-    UFUNCTION()
-    void OnMoveCompleted(FAIRequestID RequestID, EPathFollowingResult::Type Result);
+    void OnMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result);
 
     /** Log debug information */
     void LogMovementDebug(const FString& Message) const;

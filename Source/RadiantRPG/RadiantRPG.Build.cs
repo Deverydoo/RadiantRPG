@@ -18,7 +18,9 @@ public class RadiantRPG : ModuleRules
 			"Engine",
 			"InputCore",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"AIModule",
+			"NavigationSystem"
 		});
 		
 		// Enhanced Input System
@@ -45,8 +47,7 @@ public class RadiantRPG : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"GameplayAbilities",
 			"GameplayTasks",
-			"AIModule",
-			"NavigationSystem"
+			
 		});
 		
 		// Physics

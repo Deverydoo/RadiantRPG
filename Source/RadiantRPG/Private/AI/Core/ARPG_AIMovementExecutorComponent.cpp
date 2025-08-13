@@ -1,11 +1,9 @@
 // Source/RadiantRPG/Private/AI/Core/ARPG_AIMovementExecutorComponent.cpp
 
 #include "AI/Core/ARPG_AIMovementExecutorComponent.h"
-#include "AIController.h"
-#include "NavigationSystem.h"
+
 #include "Navigation/PathFollowingComponent.h"
-#include "GameFramework/Character.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "NavigationSystem.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
@@ -49,7 +47,7 @@ void UARPG_AIMovementExecutorComponent::BeginPlay()
     // Bind to path following events
     if (CachedAIController && CachedAIController->GetPathFollowingComponent())
     {
-        CachedAIController->GetPathFollowingComponent()->OnRequestFinished.AddDynamic(this, &UARPG_AIMovementExecutorComponent::OnMoveCompleted);
+        CachedAIController->GetPathFollowingComponent()->OnRequestFinished.AddUObject(this, &ThisClass::OnMoveCompleted);
         bBoundToPathFollowing = true;
     }
 
@@ -562,7 +560,7 @@ float UARPG_AIMovementExecutorComponent::CalculateMovementProgress() const
     return FMath::Clamp(TraveledDistance / TotalDistance, 0.0f, 1.0f);
 }
 
-void UARPG_AIMovementExecutorComponent::OnMoveCompleted(FAIRequestID RequestID, EPathFollowingResult::Type Result)
+void UARPG_AIMovementExecutorComponent::OnMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result)
 {
     if (RequestID != CurrentMoveRequestID)
     {
@@ -571,7 +569,7 @@ void UARPG_AIMovementExecutorComponent::OnMoveCompleted(FAIRequestID RequestID, 
     
     CurrentMoveRequestID = FAIRequestID::InvalidRequest;
     
-    if (Result == EPathFollowingResult::Success)
+    if (Result.Code == EPathFollowingResult::Success)
     {
         SetMovementState(EARPG_MovementState::Waiting);
         OnMovementCompleted(CurrentDestination);
@@ -581,7 +579,7 @@ void UARPG_AIMovementExecutorComponent::OnMoveCompleted(FAIRequestID RequestID, 
     else
     {
         SetMovementState(EARPG_MovementState::Failed);
-        FString ResultString = UEnum::GetValueAsString(Result);
+        FString ResultString = FString::Printf(TEXT("PathFollowingResult(Code: %s, Flags: %d)"), *UEnum::GetValueAsString(Result.Code), (int32)Result.Flags);
         OnMovementFailed(CurrentDestination, ResultString);
         bMovementSuccessful = false;
         LogMovementDebug(FString::Printf(TEXT("Movement failed: %s"), *ResultString));

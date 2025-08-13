@@ -1,9 +1,7 @@
 // Source/RadiantRPG/Private/AI/Core/ARPG_AIInteractionExecutorComponent.cpp
 
-#include "CoreMinimal.h"
 #include "AI/Core/ARPG_AIInteractionExecutorComponent.h"
 #include "AIController.h"
-#include "GameFramework/Character.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
