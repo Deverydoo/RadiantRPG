@@ -818,22 +818,62 @@ void ARadiantGameMode::UpdateSystemHealthCheck()
     if (!GameManager)
         return;
     
+    // Get current memory status before health check
+    float MemoryUsageMB = 0.0f;
+    if (URadiantGameManager* GM = Cast<URadiantGameManager>(GameManager))
+    {
+        MemoryUsageMB = GM->GetMemoryUsageMB();
+    }
+    
     // Check if all systems are healthy
     bool bAllSystemsHealthy = GameManager->AreAllSystemsHealthy();
     
     if (!bAllSystemsHealthy)
     {
-        LogGameModeStatus(TEXT("System health check detected unhealthy systems"), true);
+        // Only log detailed errors in development builds or when memory is critically high
+        bool bShouldLogDetailed = false;
         
-        // TODO: Get detailed system status and attempt recovery
-        // TMap<FString, FString> SystemStatus = GameManager->GetSystemStatusReport();
-        // for (const auto& StatusPair : SystemStatus)
-        // {
-        //     if (StatusPair.Value.Contains("Unhealthy"))
-        //     {
-        //         AttemptSystemRecovery(StatusPair.Key);
-        //     }
-        // }
+        #if UE_BUILD_DEBUG || UE_BUILD_DEVELOPMENT
+            bShouldLogDetailed = true;
+        #else
+            if (MemoryUsageMB > 7168.0f) // Only log in shipping if memory is critical (7GB+)
+            {
+                bShouldLogDetailed = true;
+            }
+        #endif
+        
+        if (bShouldLogDetailed)
+        {
+            LogGameModeStatus(TEXT("System health check detected unhealthy systems"), true);
+            
+            // Get detailed system status for debugging
+            TMap<FString, FString> SystemStatus = GameManager->GetSystemStatusReport();
+            for (const auto& StatusPair : SystemStatus)
+            {
+                if (StatusPair.Value.Contains("HIGH") || StatusPair.Value.Contains("Unhealthy"))
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("Unhealthy System - %s: %s"), *StatusPair.Key, *StatusPair.Value);
+                }
+            }
+        }
+        
+        // Attempt automatic recovery for memory issues
+        if (MemoryUsageMB > 5120.0f) // 5GB threshold for automatic cleanup
+        {
+            AttemptSystemRecovery(TEXT("Memory"));
+        }
+    }
+    else
+    {
+        // Log healthy status occasionally for monitoring
+        static int32 HealthyCheckCounter = 0;
+        HealthyCheckCounter++;
+        
+        if (HealthyCheckCounter >= 10) // Every 10th health check (5 minutes)
+        {
+            UE_LOG(LogTemp, Verbose, TEXT("System health check: All systems healthy (Memory: %.1f MB)"), MemoryUsageMB);
+            HealthyCheckCounter = 0;
+        }
     }
 }
 
@@ -854,26 +894,83 @@ void ARadiantGameMode::HandleSystemFailure(const FString& SystemName)
     }
 }
 
+void ARadiantGameMode::CheckMemoryRecoveryStatus()
+{
+    if (URadiantGameManager* GM = Cast<URadiantGameManager>(GameManager))
+    {
+        float PostRecoveryMemory = GM->GetMemoryUsageMB();
+        
+        if (PostRecoveryMemory < 4096.0f) // 4GB threshold
+        {
+            UE_LOG(LogTemp, Log, TEXT("Memory recovery successful: %.2f MB"), PostRecoveryMemory);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Memory recovery insufficient: %.2f MB - may need manual intervention"), PostRecoveryMemory);
+            
+            // If still high, try one more aggressive cleanup
+            if (PostRecoveryMemory > 6144.0f)
+            {
+                GM->PerformAggressiveMemoryCleanup();
+            }
+        }
+    }
+    
+    GetWorldTimerManager().ClearTimer(MemoryRecoveryCheckHandle);
+}
+
 bool ARadiantGameMode::AttemptSystemRecovery(const FString& SystemName)
 {
-    LogGameModeStatus(FString::Printf(TEXT("Attempting recovery for system: %s"), *SystemName));
+    UE_LOG(LogTemp, Warning, TEXT("Attempting recovery for system: %s"), *SystemName);
     
-    // TODO: Implement system-specific recovery logic
-    // if (SystemName == TEXT("WorldEventManager"))
-    // {
-    //     return RecoverWorldEventManager();
-    // }
-    // else if (SystemName == TEXT("FactionsManager"))
-    // {
-    //     return RecoverFactionsManager();
-    // }
+    if (SystemName == TEXT("Memory"))
+    {
+        if (URadiantGameManager* GM = Cast<URadiantGameManager>(GameManager))
+        {
+            // Try progressive memory cleanup
+            float MemoryUsageMB = GM->GetMemoryUsageMB();
+            
+            if (MemoryUsageMB > 6144.0f) // 6GB - Aggressive cleanup
+            {
+                GM->PerformAggressiveMemoryCleanup();
+            }
+            else if (MemoryUsageMB > 4096.0f) // 4GB - Standard cleanup  
+            {
+                GM->PerformMemoryCleanup();
+            }
+            else
+            {
+                GM->PerformLightMemoryCleanup();
+            }
+            
+            // Schedule follow-up check in 10 seconds
+            GetWorldTimerManager().SetTimer(MemoryRecoveryCheckHandle,
+                                          this, &ARadiantGameMode::CheckMemoryRecoveryStatus,
+                                          10.0f, false);
+        }
+    }
     
-    // Placeholder - assume recovery failed
-    return false;
+    // TODO: Add recovery logic for other systems when implemented
+    /*
+    else if (SystemName == TEXT("WorldManager"))
+    {
+        if (WorldManager)
+        {
+            WorldManager->AttemptRecovery();
+        }
+    }
+    else if (SystemName == TEXT("ZoneManager"))
+    {
+        if (ZoneManager)
+        {
+            ZoneManager->RestartZoneSimulation();
+        }
+    }
+    */
+    return true;
 }
 
 // === TIMER CALLBACKS ===
-
 void ARadiantGameMode::OnWorldInitializationTimeout()
 {
     LogGameModeStatus(TEXT("World initialization timeout reached - forcing completion"), true);

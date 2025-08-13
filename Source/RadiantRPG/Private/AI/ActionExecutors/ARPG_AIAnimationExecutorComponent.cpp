@@ -1,6 +1,6 @@
 // Source/RadiantRPG/Private/AI/Core/ARPG_AIAnimationExecutorComponent.cpp
 
-#include "AI/Core/ARPG_AIAnimationExecutorComponent.h"
+#include "AI/ActionExecutors/ARPG_AIAnimationExecutorComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"

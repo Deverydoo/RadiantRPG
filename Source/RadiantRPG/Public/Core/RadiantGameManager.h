@@ -290,7 +290,13 @@ public:
     /** Check if specific system is healthy */
     UFUNCTION(BlueprintPure, Category = "System Health")
     bool IsSystemHealthy(const FString& SystemName) const;
+    void PerformLightMemoryCleanup();
+    void TriggerAIMemoryCleanup();
 
+    void PerformMemoryCleanup();
+    void PerformAggressiveMemoryCleanup();
+    void ReduceTextureQuality();
+    void RestoreTextureQuality();
     /** Force refresh system health status */
     UFUNCTION(BlueprintCallable, Category = "System Health")
     void RefreshSystemHealth();
@@ -331,4 +337,7 @@ protected:
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Game Events")
     void OnGlobalFlagChangedBP(FGameplayTag Flag, bool bValue);
+
+private:
+    FTimerHandle TextureQualityRestoreHandle;
 };

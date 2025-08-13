@@ -1,7 +1,6 @@
 // Source/RadiantRPG/Private/AI/Core/ARPG_AIMovementExecutorComponent.cpp
 
-#include "AI/Core/ARPG_AIMovementExecutorComponent.h"
-
+#include "AI/ActionExecutors/ARPG_AIMovementExecutorComponent.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
 #include "Engine/Engine.h"

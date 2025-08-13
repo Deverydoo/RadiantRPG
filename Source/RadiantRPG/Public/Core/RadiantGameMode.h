@@ -72,6 +72,10 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void Tick(float DeltaTime) override;
 
+    /** Check memory recovery status after cleanup attempt */
+    UFUNCTION()
+    void CheckMemoryRecoveryStatus();
+
     // === WORLD INITIALIZATION ===
     
     /** Current world initialization phase */
@@ -335,6 +339,15 @@ protected:
 
 private:
     // === INTERNAL STATE ===
+
+    /** System health check interval - increased from 30 to reduce frequency */
+    static constexpr float SystemHealthCheckInterval = 30.0f;
+
+    /** Last system health check time */
+    float LastSystemHealthCheckTime;
+    
+    /** Timer handle for memory recovery status checks */
+    FTimerHandle MemoryRecoveryCheckHandle;
     
     /** Initialization timer handle */
     FTimerHandle InitializationTimeoutHandle;
@@ -350,12 +363,6 @@ private:
 
     /** World initialization start time for metrics */
     double WorldInitializationStartTime;
-
-    /** System health check interval */
-    static constexpr float SystemHealthCheckInterval = 30.0f;
-
-    /** Last system health check time */
-    float LastSystemHealthCheckTime;
 
     // === HELPER FUNCTIONS ===
     

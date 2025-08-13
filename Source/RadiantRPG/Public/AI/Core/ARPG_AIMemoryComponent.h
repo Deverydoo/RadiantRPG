@@ -310,6 +310,8 @@ private:
 
     void UpdateMemoryDecay();
     void ProcessMemoryTransfer();
+    bool IsSystemUnderMemoryPressure() const;
+    void PerformEmergencyMemoryCleanup();
     void CleanupForgottenMemories();
     void AddMemoryToStorage(const FARPG_MemoryEntry& Memory, bool bIsLongTerm);
 

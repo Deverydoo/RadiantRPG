@@ -2,11 +2,14 @@
 // Game manager implementation for RadiantRPG - central coordinator for all major game systems
 
 #include "Core/RadiantGameManager.h"
+
+#include "EngineUtils.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameplayTagsManager.h"
+#include "RenderTargetPool.h"
 #include "HAL/PlatformFilemanager.h"
 #include "Misc/DateTime.h"
 #include "GenericPlatform/GenericPlatformMemory.h"
@@ -346,9 +349,15 @@ bool URadiantGameManager::DeleteSaveSlot(const FString& SaveSlotName)
 
 void URadiantGameManager::ForceGarbageCollection()
 {
-    UE_LOG(LogTemp, Log, TEXT("GameManager: Forcing garbage collection"));
+    // Force immediate garbage collection
+    CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, true);
     
-    GEngine->ForceGarbageCollection(true);
+    // Wait a frame for cleanup to complete
+    GetWorld()->GetTimerManager().SetTimerForNextTick([this]()
+    {
+        float PostCleanupMemory = GetMemoryUsageMB();
+        UE_LOG(LogTemp, Log, TEXT("GameManager: Post-cleanup memory usage: %.2f MB"), PostCleanupMemory);
+    });
 }
 
 float URadiantGameManager::GetMemoryUsageMB() const
@@ -605,12 +614,24 @@ bool URadiantGameManager::AreAllSystemsHealthy() const
         return false;
     }
 
-    // Memory check - if we're using too much memory, flag as unhealthy
+    // Progressive memory thresholds instead of hard cutoff
     float MemoryUsageMB = GetMemoryUsageMB();
-    if (MemoryUsageMB > 4096.0f) // 4GB threshold
+    if (MemoryUsageMB > 7168.0f) // 7GB critical threshold
     {
-        UE_LOG(LogTemp, Warning, TEXT("GameManager: High memory usage detected: %.2f MB"), MemoryUsageMB);
+        UE_LOG(LogTemp, Error, TEXT("GameManager: Critical memory usage detected: %.2f MB"), MemoryUsageMB);
         return false;
+    }
+    else if (MemoryUsageMB > 5120.0f) // 5GB warning threshold  
+    {
+        // Log warning but don't fail health check immediately
+        static float LastMemoryWarningTime = 0.0f;
+        float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+        
+        if (CurrentTime - LastMemoryWarningTime > 10.0f) // Throttle warnings to every 10 seconds
+        {
+            UE_LOG(LogTemp, Warning, TEXT("GameManager: High memory usage detected: %.2f MB"), MemoryUsageMB);
+            LastMemoryWarningTime = CurrentTime;
+        }
     }
 
     // Check if we're initialized
@@ -778,14 +799,128 @@ bool URadiantGameManager::IsSystemHealthy(const FString& SystemName) const
     return false;
 }
 
+void URadiantGameManager::PerformLightMemoryCleanup()
+{
+    // Light cleanup - minimal performance impact
+    CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS, false);
+    
+    // Clear texture streaming pool - UE5.5 compatible
+    IStreamingManager::Get().StreamAllResources(0.1f);
+}
+
+void URadiantGameManager::TriggerAIMemoryCleanup()
+{
+    // Find all AI characters and trigger memory cleanup
+    if (UWorld* World = GetWorld())
+    {
+        for (TActorIterator<APawn> ActorItr(World); ActorItr; ++ActorItr)
+        {
+            APawn* Pawn = *ActorItr;
+            if (IsValid(Pawn) && !Pawn->IsPlayerControlled())
+            {
+                // Look for AI memory component and trigger cleanup
+                if (UActorComponent* MemoryComp = Pawn->GetComponentByClass(TSubclassOf<UActorComponent>(StaticLoadClass(UActorComponent::StaticClass(), nullptr, TEXT("/Script/YourProject.ARPG_AIMemoryComponent")))))
+                {
+                    // Call cleanup function via reflection or cast to proper type
+                    if (UFunction* CleanupFunc = MemoryComp->FindFunction(FName("CleanupForgottenMemories")))
+                    {
+                        MemoryComp->ProcessEvent(CleanupFunc, nullptr);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void URadiantGameManager::PerformMemoryCleanup()
+{
+    UE_LOG(LogTemp, Log, TEXT("GameManager: Performing standard memory cleanup"));
+    
+    // Standard cleanup
+    PerformLightMemoryCleanup();
+    
+    // Force full garbage collection
+    ForceGarbageCollection();
+    
+    // Trigger AI memory cleanup for all AI characters
+    TriggerAIMemoryCleanup();
+}
+
+void URadiantGameManager::PerformAggressiveMemoryCleanup()
+{
+    UE_LOG(LogTemp, Warning, TEXT("GameManager: Performing aggressive memory cleanup"));
+    
+    // Aggressive cleanup for critical memory situations
+    PerformMemoryCleanup();
+    
+    // Purge unused assets
+    if (UEngine* Engine = GEngine)
+    {
+        Engine->TrimMemory();
+    }
+    
+    // Reduce texture quality temporarily if needed
+    if (GetMemoryUsageMB() > 5120.0f) // Still above 5GB after cleanup
+    {
+        ReduceTextureQuality();
+    }
+}
+
+
+void URadiantGameManager::ReduceTextureQuality()
+{
+    UE_LOG(LogTemp, Warning, TEXT("GameManager: Temporarily reducing texture quality due to memory pressure"));
+    
+    // Reduce texture streaming pool
+    IConsoleVariable* TexturePoolSizeCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Streaming.PoolSize"));
+    if (TexturePoolSizeCVar)
+    {
+        int32 CurrentPoolSize = TexturePoolSizeCVar->GetInt();
+        int32 ReducedPoolSize = FMath::Max(CurrentPoolSize / 2, 512); // Reduce by half, minimum 512MB
+        TexturePoolSizeCVar->Set(ReducedPoolSize);
+    }
+    
+    // Set timer to restore quality after 30 seconds
+    GetWorld()->GetTimerManager().SetTimer(TextureQualityRestoreHandle, 
+                                         this, &URadiantGameManager::RestoreTextureQuality, 
+                                         30.0f, false);
+}
+
+void URadiantGameManager::RestoreTextureQuality()
+{
+    UE_LOG(LogTemp, Log, TEXT("GameManager: Restoring texture quality"));
+    
+    // Restore texture pool to default
+    IConsoleVariable* TexturePoolSizeCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Streaming.PoolSize"));
+    if (TexturePoolSizeCVar)
+    {
+        TexturePoolSizeCVar->Set(1024); // Default value
+    }
+    
+    GetWorld()->GetTimerManager().ClearTimer(TextureQualityRestoreHandle);
+}
+
 void URadiantGameManager::RefreshSystemHealth()
 {
-    UE_LOG(LogTemp, Log, TEXT("GameManager: Refreshing system health status"));
+    UE_LOG(LogTemp, Verbose, TEXT("GameManager: Refreshing system health status"));
 
-    // Force memory cleanup
-    if (GetMemoryUsageMB() > 3072.0f) // 3GB threshold for cleanup
+    // Aggressive memory cleanup with graduated thresholds
+    float MemoryUsageMB = GetMemoryUsageMB();
+    
+    if (MemoryUsageMB > 6144.0f) // 6GB - Critical cleanup
     {
-        ForceGarbageCollection();
+        UE_LOG(LogTemp, Warning, TEXT("GameManager: Critical memory usage detected: %.2f MB - performing aggressive cleanup"), MemoryUsageMB);
+        PerformAggressiveMemoryCleanup();
+    }
+    else if (MemoryUsageMB > 4096.0f) // 4GB - Standard cleanup
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GameManager: High memory usage detected: %.2f MB - performing cleanup"), MemoryUsageMB);
+        PerformMemoryCleanup();
+    }
+    else if (MemoryUsageMB > 3072.0f) // 3GB - Preventive cleanup
+    {
+        UE_LOG(LogTemp, Log, TEXT("GameManager: Elevated memory usage: %.2f MB - performing preventive cleanup"), MemoryUsageMB);
+        PerformLightMemoryCleanup();
     }
 
     // TODO: Refresh individual system health when systems are implemented
@@ -816,12 +951,17 @@ void URadiantGameManager::RefreshSystemHealth()
     }
     */
 
-    // Log system status after refresh
+    // Only log system status in debug builds or when issues detected
+#if UE_BUILD_DEBUG || UE_BUILD_DEVELOPMENT
     TMap<FString, FString> SystemStatus = GetSystemStatusReport();
     for (const auto& StatusPair : SystemStatus)
     {
-        UE_LOG(LogTemp, Log, TEXT("System Status - %s: %s"), *StatusPair.Key, *StatusPair.Value);
+        if (StatusPair.Value.Contains("HIGH") || StatusPair.Value.Contains("Unhealthy"))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("System Status - %s: %s"), *StatusPair.Key, *StatusPair.Value);
+        }
     }
+#endif
 }
 
 // Helper function for enum to string conversion

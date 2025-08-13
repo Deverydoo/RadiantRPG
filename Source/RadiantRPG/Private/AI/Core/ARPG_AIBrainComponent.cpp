@@ -8,7 +8,7 @@
 #include "AI/Core/ARPG_AIEventManager.h"
 #include "Engine/World.h"
 #include "RadiantRPG.h"
-#include "AI/Core/ARPG_AIBehaviorExecutorComponent.h"
+#include "AI/ActionExecutors/ARPG_AIBehaviorExecutorComponent.h"
 #include "Types/ARPG_AIDataTableTypes.h"
 #include "Types/RadiantAITypes.h"
 

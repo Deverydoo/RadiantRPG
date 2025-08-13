@@ -1,10 +1,10 @@
 // Source/RadiantRPG/Private/AI/Core/ARPG_AIBehaviorExecutorComponent.cpp
 
-#include "AI/Core/ARPG_AIBehaviorExecutorComponent.h"
-#include "AI/Core/ARPG_AIMovementExecutorComponent.h"
-#include "AI/Core/ARPG_AICombatExecutorComponent.h"
-#include "AI/Core/ARPG_AIInteractionExecutorComponent.h"
-#include "AI/Core/ARPG_AIAnimationExecutorComponent.h"
+#include "AI/ActionExecutors/ARPG_AIBehaviorExecutorComponent.h"
+#include "AI/ActionExecutors/ARPG_AIMovementExecutorComponent.h"
+#include "AI/ActionExecutors/ARPG_AICombatExecutorComponent.h"
+#include "AI/ActionExecutors/ARPG_AIInteractionExecutorComponent.h"
+#include "AI/ActionExecutors/ARPG_AIAnimationExecutorComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Core/RadiantGameplayTags.h"

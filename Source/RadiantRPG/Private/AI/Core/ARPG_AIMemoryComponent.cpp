@@ -9,6 +9,7 @@
 #include "RadiantRPG.h"
 #include "AI/Components/ARPG_RelationshipComponent.h"
 #include "AI/Interfaces/ARPG_FactionInterface.h"
+#include "Core/RadiantGameManager.h"
 #include "Types/ARPG_AIDataTableTypes.h"
 #include "World/RadiantZone.h"
 
@@ -303,34 +304,184 @@ void UARPG_AIMemoryComponent::ProcessMemoryTransfer()
     }
 }
 
+bool UARPG_AIMemoryComponent::IsSystemUnderMemoryPressure() const
+{
+    // Check if the game is under memory pressure
+    // This could be communicated from the GameManager
+    if (UWorld* World = GetWorld())
+    {
+        if (URadiantGameManager* GameManager = World->GetGameInstance()->GetSubsystem<URadiantGameManager>())
+        {
+            float MemoryUsageMB = GameManager->GetMemoryUsageMB();
+            return MemoryUsageMB > 5120.0f; // 5GB threshold for memory pressure
+        }
+    }
+    
+    return false;
+}
+
+void UARPG_AIMemoryComponent::PerformEmergencyMemoryCleanup()
+{
+    UE_LOG(LogARPG, Warning, TEXT("AIMemory (%s): Performing emergency memory cleanup"), 
+           GetOwner() ? *GetOwner()->GetName() : TEXT("Unknown"));
+    
+    // Drastically reduce memory footprint
+    for (auto& TypePair : ShortTermMemories)
+    {
+        int32 MaxEmergencyCapacity = FMath::Max(MemoryConfig.MaxShortTermMemories / 4, 2);
+        while (TypePair.Value.Num() > MaxEmergencyCapacity)
+        {
+            TypePair.Value.RemoveAt(0);
+        }
+    }
+    
+    for (auto& TypePair : LongTermMemories)
+    {
+        // Only keep permanent and high relevance memories
+        for (int32 i = TypePair.Value.Num() - 1; i >= 0; i--)
+        {
+            const FARPG_MemoryEntry& Memory = TypePair.Value[i];
+            if (!Memory.bIsPermanent && Memory.Relevance < EARPG_MemoryRelevance::High)
+            {
+                TypePair.Value.RemoveAt(i);
+            }
+        }
+    }
+    
+    // Reduce update frequency to save performance
+    MemoryConfig.DecayUpdateFrequency = FMath::Max(MemoryConfig.DecayUpdateFrequency * 2.0f, 5.0f);
+    
+    UE_LOG(LogARPG, Log, TEXT("AIMemory (%s): Emergency cleanup complete"), 
+           GetOwner() ? *GetOwner()->GetName() : TEXT("Unknown"));
+}
+
 void UARPG_AIMemoryComponent::CleanupForgottenMemories()
 {
     float CurrentTime = GetWorld()->GetTimeSeconds();
     int32 ForgottenCount = 0;
+    int32 TotalMemoriesBeforeCleanup = 0;
+    int32 TotalMemoriesAfterCleanup = 0;
     
-    TArray<TMap<EARPG_MemoryType, TArray<FARPG_MemoryEntry>>*> Storages = {&ShortTermMemories, &LongTermMemories};
-    
-    for (auto* Storage : Storages)
+    // Count total memories before cleanup
+    for (const auto& TypePair : ShortTermMemories)
     {
-        for (auto& TypePair : *Storage)
+        TotalMemoriesBeforeCleanup += TypePair.Value.Num();
+    }
+    for (const auto& TypePair : LongTermMemories)
+    {
+        TotalMemoriesBeforeCleanup += TypePair.Value.Num();
+    }
+    
+    // Clean up short-term memories
+    for (auto& TypePair : ShortTermMemories)
+    {
+        for (int32 i = TypePair.Value.Num() - 1; i >= 0; i--)
         {
-            for (int32 i = TypePair.Value.Num() - 1; i >= 0; i--)
+            const FARPG_MemoryEntry& Memory = TypePair.Value[i];
+            if (Memory.ShouldForget(CurrentTime, MemoryConfig.ForgetThreshold))
             {
-                const FARPG_MemoryEntry& Memory = TypePair.Value[i];
-                if (!Memory.bIsPermanent && Memory.ShouldForget(CurrentTime, EffectiveConfig.ForgetThreshold))
+                OnMemoryForgotten.Broadcast(Memory, Memory.MemoryType);
+                BP_OnMemoryForgotten(Memory);
+                TypePair.Value.RemoveAt(i);
+                ForgottenCount++;
+            }
+        }
+        
+        // Enforce capacity limits more aggressively under memory pressure
+        int32 MaxCapacity = MemoryConfig.MaxShortTermMemories;
+        
+        // Reduce capacity under high system memory pressure
+        if (IsSystemUnderMemoryPressure())
+        {
+            MaxCapacity = FMath::Max(MaxCapacity / 2, 5); // Reduce by half, minimum 5
+        }
+        
+        if (TypePair.Value.Num() > MaxCapacity)
+        {
+            // Remove oldest, weakest memories first
+            TypePair.Value.Sort([CurrentTime](const FARPG_MemoryEntry& A, const FARPG_MemoryEntry& B) {
+                float StrengthA = A.GetCurrentStrength(CurrentTime);
+                float StrengthB = B.GetCurrentStrength(CurrentTime);
+                
+                if (!FMath::IsNearlyEqual(StrengthA, StrengthB))
                 {
-                    OnMemoryForgotten.Broadcast(Memory, Memory.MemoryType);
-                    BP_OnMemoryForgotten(Memory);
-                    TypePair.Value.RemoveAt(i);
-                    ForgottenCount++;
+                    return StrengthA < StrengthB; // Weakest first
+                }
+                
+                return A.CreationTime < B.CreationTime; // Oldest first if same strength
+            });
+            
+            int32 ToRemove = TypePair.Value.Num() - MaxCapacity;
+            for (int32 i = 0; i < ToRemove; i++)
+            {
+                OnMemoryForgotten.Broadcast(TypePair.Value[0], TypePair.Value[0].MemoryType);
+                TypePair.Value.RemoveAt(0);
+                ForgottenCount++;
+            }
+        }
+    }
+    
+    // Clean up long-term memories under extreme pressure
+    if (IsSystemUnderMemoryPressure())
+    {
+        for (auto& TypePair : LongTermMemories)
+        {
+            int32 MaxLongTermCapacity = FMath::Max(MemoryConfig.MaxLongTermMemories / 2, 10);
+            
+            if (TypePair.Value.Num() > MaxLongTermCapacity)
+            {
+                // Remove least relevant, non-permanent long-term memories
+                TypePair.Value.Sort([CurrentTime](const FARPG_MemoryEntry& A, const FARPG_MemoryEntry& B) {
+                    // Never remove permanent memories
+                    if (A.bIsPermanent && !B.bIsPermanent) return false;
+                    if (!A.bIsPermanent && B.bIsPermanent) return true;
+                    if (A.bIsPermanent && B.bIsPermanent) return false;
+                    
+                    // Remove by relevance and strength
+                    float RelevanceA = A.GetRelevanceFloat();
+                    float RelevanceB = B.GetRelevanceFloat();
+                    
+                    if (!FMath::IsNearlyEqual(RelevanceA, RelevanceB))
+                    {
+                        return RelevanceA < RelevanceB;
+                    }
+                    
+                    float StrengthA = A.GetCurrentStrength(CurrentTime);
+                    float StrengthB = B.GetCurrentStrength(CurrentTime);
+                    
+                    return StrengthA < StrengthB;
+                });
+                
+                int32 ToRemove = TypePair.Value.Num() - MaxLongTermCapacity;
+                for (int32 i = 0; i < ToRemove; i++)
+                {
+                    if (!TypePair.Value[0].bIsPermanent)
+                    {
+                        OnMemoryForgotten.Broadcast(TypePair.Value[0], TypePair.Value[0].MemoryType);
+                        TypePair.Value.RemoveAt(0);
+                        ForgottenCount++;
+                    }
                 }
             }
         }
     }
     
-    if (ForgottenCount > 0 && EffectiveConfig.bEnableDebugLogging)
+    // Count total memories after cleanup
+    for (const auto& TypePair : ShortTermMemories)
     {
-        UE_LOG(LogARPG, Log, TEXT("Forgot %d memories during cleanup"), ForgottenCount);
+        TotalMemoriesAfterCleanup += TypePair.Value.Num();
+    }
+    for (const auto& TypePair : LongTermMemories)
+    {
+        TotalMemoriesAfterCleanup += TypePair.Value.Num();
+    }
+    
+    // Log cleanup results
+    if (ForgottenCount > 0)
+    {
+        UE_LOG(LogARPG, Log, TEXT("AIMemory (%s): Cleaned up %d memories (%d -> %d total)"), 
+               GetOwner() ? *GetOwner()->GetName() : TEXT("Unknown"),
+               ForgottenCount, TotalMemoriesBeforeCleanup, TotalMemoriesAfterCleanup);
     }
 }
 
