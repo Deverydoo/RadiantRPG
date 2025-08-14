@@ -8,6 +8,7 @@
 #include "AI/Core/ARPG_AIPersonalityComponent.h"
 #include "Types/ARPG_AITypes.h"
 #include "GameplayTagsManager.h"
+#include "Core/RadiantGameplayTags.h"
 
 AARPG_BaseNPCCharacter::AARPG_BaseNPCCharacter()
 {
@@ -269,30 +270,47 @@ void AARPG_BaseNPCCharacter::UpdateBehaviorFromIntent(const FARPG_AIIntent& Inte
 {
     FGameplayTag OldBehavior = CurrentBehavior;
     
-    // Map intent to behavior tag
-    if (Intent.IntentTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("AI.Intent.Flee"))))
+    // Map intent to behavior tag using the correct gameplay tag constants
+    if (Intent.IntentTag.MatchesTag(TAG_AI_Intent_Survival_Flee))
     {
-        CurrentBehavior = FGameplayTag::RequestGameplayTag(TEXT("Behavior.Fleeing"));
+        CurrentBehavior = TAG_Behavior_Fleeing;
     }
-    else if (Intent.IntentTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("AI.Intent.Attack"))))
+    else if (Intent.IntentTag.MatchesTag(TAG_AI_Intent_Combat_Attack))
     {
-        CurrentBehavior = FGameplayTag::RequestGameplayTag(TEXT("Behavior.Combating"));
+        CurrentBehavior = TAG_Behavior_Combat;
     }
-    else if (Intent.IntentTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("AI.Intent.Explore"))))
+    else if (Intent.IntentTag.MatchesTag(TAG_AI_Intent_Social_Talk))
     {
-        CurrentBehavior = FGameplayTag::RequestGameplayTag(TEXT("Behavior.Exploring"));
+        CurrentBehavior = TAG_Behavior_Socializing;
     }
-    else if (Intent.IntentTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("AI.Intent.Socialize"))))
+    else if (Intent.IntentTag.MatchesTag(TAG_AI_Intent_Curiosity_Explore))
     {
-        CurrentBehavior = FGameplayTag::RequestGameplayTag(TEXT("Behavior.Socializing"));
+        CurrentBehavior = TAG_Behavior_Moving; // or create TAG_Behavior_Exploring
+    }
+    else if (Intent.IntentTag.MatchesTag(TAG_AI_Intent_Wander))
+    {
+        CurrentBehavior = TAG_Behavior_Moving;
+    }
+    else if (Intent.IntentTag.MatchesTag(TAG_AI_Intent_Patrol))
+    {
+        CurrentBehavior = TAG_Behavior_Moving;
+    }
+    else if (Intent.IntentTag.MatchesTag(TAG_AI_Intent_Idle))
+    {
+        CurrentBehavior = TAG_Behavior_Idle;
+    }
+    else if (Intent.IntentTag.MatchesTag(TAG_AI_Intent_Guard))
+    {
+        CurrentBehavior = TAG_Behavior_Idle; // Standing guard
     }
     else
     {
-        CurrentBehavior = FGameplayTag::RequestGameplayTag(TEXT("Behavior.Idle"));
+        // Default fallback behavior
+        CurrentBehavior = TAG_Behavior_Idle;
     }
-
-    // Notify if behavior changed
-    if (CurrentBehavior != OldBehavior)
+    
+    // Notify about behavior change if it actually changed
+    if (OldBehavior != CurrentBehavior)
     {
         OnBehaviorChanged.Broadcast(this, CurrentBehavior);
         BP_OnBehaviorChanged(OldBehavior, CurrentBehavior);
