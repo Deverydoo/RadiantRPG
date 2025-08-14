@@ -11,6 +11,7 @@
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/DateTime.h"
+#include "Types/SystemTypes.h"
 #include "Types/WorldManagerTypes.h"
 
 URadiantWorldManager::URadiantWorldManager()
@@ -46,20 +47,44 @@ void URadiantWorldManager::Initialize(FSubsystemCollectionBase& Collection)
     
     UE_LOG(LogTemp, Log, TEXT("RadiantWorldManager initializing..."));
     
-    // Initialize core systems
-    InitializeSimpleTimeSystem();
-    InitializeWeatherSystem();
-    InitializeEventSystem();
-    InitializeDefaultWorldState();
+    bool bInitializationSuccessful = true;
     
-    bIsInitialized = true;
+    try
+    {
+        // Initialize core systems
+        InitializeSimpleTimeSystem();
+        InitializeWeatherSystem();
+        InitializeEventSystem();
+        InitializeDefaultWorldState();
+        
+        bIsInitialized = true;
+        
+        UE_LOG(LogTemp, Log, TEXT("RadiantWorldManager initialized successfully"));
+    }
+    catch (...)
+    {
+        bInitializationSuccessful = false;
+        bIsInitialized = false;
+        UE_LOG(LogTemp, Error, TEXT("RadiantWorldManager initialization failed"));
+    }
     
-    UE_LOG(LogTemp, Log, TEXT("RadiantWorldManager initialized successfully"));
+    // Broadcast initialization event
+    FSystemEventCoordinator::Get().BroadcastSystemInitialized(
+        ESystemType::WorldManager, 
+        bInitializationSuccessful, 
+        TEXT("RadiantWorldManager")
+    );
 }
 
 void URadiantWorldManager::Deinitialize()
 {
     UE_LOG(LogTemp, Log, TEXT("RadiantWorldManager shutting down..."));
+    
+    // Broadcast shutdown event
+    FSystemEventCoordinator::Get().BroadcastSystemShutdown(
+        ESystemType::WorldManager, 
+        TEXT("RadiantWorldManager")
+    );
     
     ShutdownWorldSimulation();
     
