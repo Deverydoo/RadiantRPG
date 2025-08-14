@@ -186,6 +186,7 @@ struct RADIANTRPG_API FARPG_AIEvent
     /** Additional event-specific data */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
     TMap<FString, FString> EventData;
+    double EventTime;
 
     FARPG_AIEvent()
     {

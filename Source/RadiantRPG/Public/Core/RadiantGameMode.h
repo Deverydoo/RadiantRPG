@@ -70,6 +70,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    void CheckAlreadyInitializedSystems();
     void SubscribeToSystemEvents();
     void StartEventDrivenInitialization();
     void OnSystemInitialized(const FSystemInitializationEvent& Event);

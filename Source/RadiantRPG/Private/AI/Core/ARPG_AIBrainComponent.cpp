@@ -43,17 +43,75 @@ void UARPG_AIBrainComponent::BeginPlay()
 {
     Super::BeginPlay();
     
-    // Load configuration first (data table takes priority)
+    // Existing initialization...
     LoadBrainConfiguration();
-    
-    // Continue with existing initialization...
     InitializeComponentReferences();
     RegisterWithEventManager();
-
     BehaviorExecutor = GetOwner()->FindComponentByClass<UARPG_AIBehaviorExecutorComponent>();
+    
+    // Add initialization timeout to prevent freezing
+    FTimerHandle InitTimeoutHandle;
+    GetWorld()->GetTimerManager().SetTimer(InitTimeoutHandle,
+        [this]()
+        {
+            if (CurrentBrainState.CurrentState == EARPG_BrainState::Inactive)
+            {
+                UE_LOG(LogARPG, Warning, TEXT("Brain initialization timeout for %s - forcing activation"), 
+                    *GetOwner()->GetName());
+                    
+                // Force enable the brain using the existing method
+                SetBrainEnabled(true);
+                
+                // Set to idle state
+                SetBrainState(EARPG_BrainState::Idle);
+                
+                // Start curiosity timer as fallback behavior
+                StartCuriosityTimer();
+            }
+        },
+        2.0f, // 2 second timeout
+        false);
     
     UE_LOG(LogARPG, Log, TEXT("Brain Component: Initialized with %s configuration"), 
            bUseDataTableConfig ? TEXT("DataTable") : TEXT("Blueprint"));
+}
+
+// Add this new method to handle curiosity timer
+void UARPG_AIBrainComponent::StartCuriosityTimer()
+{
+    // Clear any existing timer
+    GetWorld()->GetTimerManager().ClearTimer(CuriosityTimerHandle);
+    
+    // Calculate next curiosity check time
+    float CuriosityCheckInterval = FMath::RandRange(
+        BrainConfig.CuriosityThreshold * 0.5f, 
+        BrainConfig.CuriosityThreshold * 1.5f
+    );
+    
+    // Set timer for curiosity check
+    GetWorld()->GetTimerManager().SetTimer(CuriosityTimerHandle,
+        [this]()
+        {
+            if (ShouldActivateCuriosity())
+            {
+                UE_LOG(LogARPG, VeryVerbose, TEXT("%s activating curiosity behavior"), 
+                    *GetOwner()->GetName());
+                
+                // Generate a curiosity intent
+                FARPG_AIIntent CuriosityIntent = GenerateCuriosityIntent();
+                if (ValidateIntent(CuriosityIntent))
+                {
+                    CurrentBrainState.CurrentIntent = CuriosityIntent;
+                    OnIntentChanged.Broadcast(CuriosityIntent);
+                    SetBrainState(EARPG_BrainState::Executing);
+                }
+            }
+            
+            // Restart timer for next check
+            StartCuriosityTimer();
+        },
+        CuriosityCheckInterval,
+        false);
 }
 
 void UARPG_AIBrainComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

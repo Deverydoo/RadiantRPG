@@ -118,6 +118,10 @@ protected:
     TArray<TSubclassOf<UGameInstanceSubsystem>> SystemInitializationOrder;
 
 public:
+
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Game Manager")
+    bool IsInitialized() const { return bIsInitialized; }
+    
     // === EVENTS ===
     
     UPROPERTY(BlueprintAssignable, Category = "Game Events")
@@ -145,6 +149,7 @@ public:
     /** Check if game is currently in a playable state */
     UFUNCTION(BlueprintPure, Category = "Game State")
     bool IsInPlayableState() const;
+    void OnGameStateTransition(EGameState FromState, EGameState ToState);
 
     // === TIME INTERFACE (DELEGATED TO WORLDMANAGER) ===
     
@@ -163,6 +168,7 @@ public:
     /** Get current season (delegated) */
     UFUNCTION(BlueprintPure, Category = "Time System")
     int32 GetCurrentSeason() const;
+    bool IsDaytime() const;
 
     /** Check if it's daytime (delegated) */
     UFUNCTION(BlueprintPure, Category = "Time System")
@@ -235,6 +241,7 @@ public:
     /** Load game state */
     UFUNCTION(BlueprintCallable, Category = "Save System")
     bool LoadGame(const FString& SaveSlotName);
+    bool DoesSaveExist(const FString& SaveSlotName) const;
 
     /** Check if save slot exists */
     UFUNCTION(BlueprintPure, Category = "Save System")
@@ -297,6 +304,7 @@ protected:
 
     /** Update system health monitoring */
     void UpdateSystemHealth(float DeltaTime);
+    void UpdateGlobalSystems(float DeltaTime);
 
     /** Setup auto-save timer */
     void SetupAutoSaveTimer();

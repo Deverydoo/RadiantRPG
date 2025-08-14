@@ -126,6 +126,12 @@ protected:
 
     UPROPERTY(BlueprintReadOnly, Category = "Execution")
     TObjectPtr<UARPG_AIBehaviorExecutorComponent> BehaviorExecutor;
+
+    /** Start or restart the curiosity timer */
+    void StartCuriosityTimer();
+    
+    /** Timer handle for curiosity checks */
+    FTimerHandle CuriosityTimerHandle;
     
     // === DATA TABLE INTEGRATION ===
     

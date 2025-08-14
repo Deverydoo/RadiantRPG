@@ -76,6 +76,9 @@ class RADIANTRPG_API URadiantWorldManager : public UGameInstanceSubsystem,
 public:
     URadiantWorldManager();
 
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "World Manager")
+    bool IsWorldInitialized() const { return bIsInitialized; }
+    
     // USubsystem interface
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
